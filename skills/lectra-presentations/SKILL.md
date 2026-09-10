@@ -33,7 +33,7 @@ Before generating files, normally propose a concise presentation plan containing
 
 Wait for approval or revision unless the user already instructed you to generate immediately.
 
-Read `references/workflow.md` for the detailed authoring sequence.
+Read `references/workflow.md` for the detailed authoring sequence when that bundled file is available.
 
 ## 4. Generate the synchronized bundle
 
@@ -53,7 +53,7 @@ Treat the three outputs as different surfaces:
 
 Do not copy slide text verbatim into the spoken narrative unless that is genuinely the best presentation wording.
 
-Read `references/output-contract.md` before producing the final bundle.
+Read `references/output-contract.md` before producing the final bundle when that bundled file is available.
 
 ## 5. Write natural presenter speech
 
@@ -63,21 +63,40 @@ Match technical depth to the audience. Preserve exact numbers and scientific mea
 
 ## 6. Produce narration schema 1.0
 
-Follow `references/narration-format.md` exactly for `presentation-narration.md`.
+Follow `references/narration-format.md` when that bundled file is available.
 
 Use only the defined v1 controls unless the user explicitly requests an experimental extension. The narration file must remain independent of any specific TTS provider or model.
 
-After creating the file, run:
+After creating the file, use the bundled `scripts/validate_narration.py` with `python3` **only if the host exposes the Skill files in the current session**. Never guess or hard-code a Skill mount path. Use the actual Skill path supplied by the host or discovered from the current session's Skill/file tools. Do not `cd` into a read-only Skill directory.
 
-```bash
-python scripts/validate_narration.py presentation-narration.md
+If the bundled validator is not accessible, do not treat that as a presentation failure and do not invent a path. Perform the equivalent validation directly with the host's available tools using the fallback rules below, and state in the final QA note that the bundled validator was unavailable in that session.
+
+Minimum narration fallback contract:
+
+```markdown
+---
+lectra_schema: "1.0"
+title: Presentation title
+language: en-US
+style: academic-presentation
+default_pace: normal
+default_tone: explanatory
+---
+
+<!-- slide: 1 -->
+
+Natural spoken prose.
 ```
 
-Fix validation errors before returning the presentation bundle.
+Allowed v1 directives are `slide`, `pause` (`short|medium|long`), `pace` (`slow|normal|fast`), and `tone` (`explanatory|serious|enthusiastic|reflective`). Only ordinary prose is spoken. YAML front matter, comments/directives, headings, lists, tables, code blocks, URLs, and presenter-only metadata must not become speech. Slide directives must be positive and strictly increasing; gaps are allowed.
+
+Fix validation errors before returning the presentation bundle. Review timing and warnings when available.
 
 ## 7. Perform final synchronization QA
 
-Verify all three outputs together. Confirm:
+After the PPTX, presenter script, and narration all exist, use `scripts/validate_bundle.py` with `python3` when the host exposes the bundled Skill files. Again, resolve the actual Skill path from the host; never assume one.
+
+If the script is unavailable, perform the structural checks directly: compare PPTX slide count with slide numbers in the presenter script and narration, reject references to nonexistent slides, reject duplicate/backward narration slide markers, and confirm every narrated slide has a corresponding presenter-script section. Then verify all three outputs together. Confirm:
 
 - slide order and topics match across PPTX, script, and narration;
 - no narration remains for removed slides;
@@ -86,4 +105,4 @@ Verify all three outputs together. Confirm:
 - the narration contains no metadata intended to be spoken accidentally;
 - scientific claims remain grounded in the supplied material.
 
-Read `references/quality-control.md` for the final checks.
+Read `references/quality-control.md` for the final checks when that bundled file is available.
