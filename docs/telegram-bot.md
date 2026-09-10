@@ -4,10 +4,12 @@ Lectra's Telegram bot is a thin local client for the Lectra Voice Service. It us
 
 ## Privacy boundary
 
-- Voice recordings are stored only under `LECTRA_DATA_DIR` on the local Lectra machine.
+Telegram transports the enrollment recording, narration file, and returned MP3. Lectra does not send the voice sample or narration to a separate cloud TTS/LLM service.
+
+- Lectra's persistent voice-profile copy is stored under `LECTRA_DATA_DIR` on the local Lectra machine.
 - Users are isolated by immutable numeric Telegram user ID.
-- The bot requires an explicit ownership/permission confirmation before saving a voice profile.
-- `/deletevoice` removes the local voice profile.
+- The bot requires explicit ownership/permission confirmation before saving a voice profile.
+- `/deletevoice` removes Lectra's local voice-profile copy. It does not delete the original Telegram message containing the recording.
 - Bot tokens are read only from `TELEGRAM_BOT_TOKEN`; never commit tokens or voice recordings.
 - Run the FastAPI service on `127.0.0.1` unless you intentionally add authentication and network controls.
 
@@ -82,3 +84,5 @@ Useful commands:
 ## Telegram limits used by the MVP
 
 The Bot API currently allows bot downloads up to 20 MB and audio uploads up to 50 MB. Lectra additionally limits narration Markdown to 2 MB because normal narration files should be far smaller.
+
+Lectra encodes final speech MP3s as 96 kbps mono. At that bitrate a 45-minute presentation is roughly 32 MB, leaving useful headroom under Telegram's 50 MB bot upload limit.

@@ -60,7 +60,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "1. Run /setupvoice once.\n"
         "2. Send a presentation-narration.md file.\n"
         "3. Tap Generate audio.\n\n"
-        "Voice samples and generated work stay on the local Lectra machine."
+        "Telegram transports your messages and files. Lectra stores the voice profile and runs "
+        "TTS locally; it does not send the voice sample to a separate cloud TTS service."
     )
 
 
@@ -204,7 +205,10 @@ async def delete_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(str(exc))
         return
     if deleted:
-        await update.message.reply_text(f"Voice profile '{voice_id}' deleted from local storage.")
+        await update.message.reply_text(
+            f"Voice profile '{voice_id}' deleted from Lectra's local storage. "
+            "This does not delete the original Telegram message that carried the recording."
+        )
     else:
         await update.message.reply_text(f"Voice profile '{voice_id}' was not found.")
 
@@ -331,6 +335,7 @@ async def narration_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             performer="Lectra",
             caption=f"Generated locally with {DEFAULT_BACKEND}.",
         )
+    await query.edit_message_text(f"Done: {title}")
 
     context.user_data.pop("pending_narration", None)
     context.user_data.pop("pending_title", None)

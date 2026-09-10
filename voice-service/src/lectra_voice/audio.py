@@ -37,8 +37,10 @@ def _write_mp3_from_wav(wav_path: Path, output_path: Path) -> None:
         str(wav_path),
         "-codec:a",
         "libmp3lame",
-        "-q:a",
-        "2",
+        "-ac",
+        "1",
+        "-b:a",
+        "96k",
         str(output_path),
     ]
     try:
