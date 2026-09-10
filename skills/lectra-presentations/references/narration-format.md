@@ -15,7 +15,7 @@ default_tone: explanatory
 ---
 ```
 
-`lectra_schema` and `title` are required. Include `target_duration_minutes` when known.
+`lectra_schema` and `title` are required. Include `target_duration_minutes` when known; when provided it must be a positive number.
 
 ## Allowed directives
 
@@ -35,7 +35,7 @@ Use standalone comments only:
 <!-- tone: reflective -->
 ```
 
-Pace and tone persist until changed. Pause inserts silence. Slide sets the current slide.
+Pace and tone persist until changed. Pause inserts silence. Slide sets the current slide. Slide directives must be strictly increasing because narration follows a linear presentation timeline. Gaps are allowed when some deck slides intentionally have no narration.
 
 ## Narrative rules
 
