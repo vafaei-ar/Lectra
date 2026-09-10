@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lectra.local/schemas/narration-v1.schema.json",
+  "title": "Lectra Narration Front Matter 1.0",
+  "type": "object",
+  "required": ["lectra_schema", "title"],
+  "properties": {
+    "lectra_schema": {"const": "1.0"},
+    "title": {"type": "string", "minLength": 1},
+    "language": {"type": "string", "minLength": 2},
+    "target_duration_minutes": {"type": "number", "exclusiveMinimum": 0},
+    "style": {"type": "string", "minLength": 1},
+    "default_pace": {"enum": ["slow", "normal", "fast"]},
+    "default_tone": {"enum": ["explanatory", "serious", "enthusiastic", "reflective"]}
+  },
+  "additionalProperties": true
+}

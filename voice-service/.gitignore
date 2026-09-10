@@ -1,0 +1,6 @@
+data/
+output/
+*.wav
+*.mp3
+*.m4a
+*.ogg
