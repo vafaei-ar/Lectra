@@ -1,1 +1,9 @@
-Good afternoon everyone. Today I want to walk through a clinical prediction problem and explain why uncertainty matters as much as accuracy. Imagine that we develop a model to estimate the five-year risk of stroke. An AUROC of zero point eight two may look impressive, but that number alone does not tell us whether the predicted probabilities are well calibrated. For example, when the model says twenty percent risk, we want roughly twenty out of one hundred similar patients to experience the outcome. During this presentation, I will move from the clinical motivation to the data, the modeling approach, external validation, and finally the limitations. The main point is simple: a useful clinical model must perform well, communicate uncertainty clearly, and remain reliable when we move it to a new population.
+Hello everyone. Thank you for joining me today.
+
+In this presentation, I will walk through the main idea and explain why it is important. I will start with some background, then go through the key points, and finally discuss what we can learn from them.
+
+As we move through the presentation, I will highlight a few things that I think are especially important.
+
+At the end, I will briefly summarize the main points and leave some time for questions.
+
+Let's get started.
