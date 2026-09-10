@@ -55,10 +55,26 @@ class Qwen3TTSBackend(TTSBackend):
                 "environment with: pip install -e '.[qwen3]'"
             ) from exc
 
+        cuda_available = torch.cuda.is_available()
+
         if device == "auto":
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            if not cuda_available:
+                raise RuntimeError(
+                    "CUDA is not available to PyTorch. Lectra will not silently fall back "
+                    "to CPU for Qwen3-TTS because generation can become extremely slow. "
+                    "Check the NVIDIA driver/PyTorch CUDA compatibility, or explicitly "
+                    "pass --device cpu if CPU generation is intentional."
+                )
+            device = "cuda:0"
         elif device == "cuda":
             device = "cuda:0"
+
+        if device.startswith("cuda") and not cuda_available:
+            raise RuntimeError(
+                f"Requested device '{device}', but CUDA is not available to PyTorch. "
+                "Check the NVIDIA driver and the CUDA version used by the installed "
+                "PyTorch build."
+            )
 
         if device.startswith("cuda"):
             dtype = torch.bfloat16
