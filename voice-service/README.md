@@ -1,50 +1,50 @@
 # Lectra Voice Service
 
-Local narration parsing and speech synthesis for Lectra.
+Local narration parsing, voice profiles, speech synthesis, and Telegram delivery for Lectra.
 
-The service is independent of ChatGPT, Claude, and paid TTS APIs. It consumes the versioned `presentation-narration.md` format, removes non-spoken metadata deterministically, and supports interchangeable local TTS backends.
+Chatterbox is the default TTS backend after the initial real-voice bake-off. Qwen3-TTS remains optional.
 
-## Current capabilities
-
-- parse and validate Lectra narration schema 1.0;
-- CLI inspection with `lectra-voice parse`;
-- local synthesis with Qwen3-TTS or Chatterbox when the corresponding optional dependency is installed;
-- sequential WAV rendering with explicit silence insertion;
-- MP3 conversion through local FFmpeg;
-- FastAPI health and parse endpoints;
-- lazy backend loading so the base service does not require PyTorch or model weights.
-
-## Base development install
+## Production-style local install
 
 ```bash
-python -m pip install -e '.[dev]'
-pytest
-lectra-voice parse ../examples/example-narration.md
-uvicorn lectra_voice.service:app --reload
+python -m venv .venv-chatterbox
+source .venv-chatterbox/bin/activate
+python -m pip install -U pip
+pip install -e '.[chatterbox,telegram]'
 ```
 
-## TTS environments
+FFmpeg is required. For NVIDIA systems, install a PyTorch build compatible with the machine's NVIDIA driver before installing model packages if necessary.
 
-Do not install both model stacks into the same environment during the initial bake-off. Use separate environments:
+## Run the service
 
 ```bash
-pip install -e '.[qwen3]'
+export LECTRA_DATA_DIR="$HOME/.local/share/lectra"
+export LECTRA_DEVICE=cuda
+uvicorn lectra_voice.service:app --host 127.0.0.1 --port 8000
 ```
 
-or:
+The service keeps the TTS backend warm after first use and serializes GPU rendering jobs.
+
+## Run the Telegram bot
 
 ```bash
-pip install -e '.[chatterbox]'
+export TELEGRAM_BOT_TOKEN='your-token'
+export LECTRA_VOICE_SERVICE_URL='http://127.0.0.1:8000'
+lectra-bot
 ```
 
-See `../docs/tts-bakeoff.md` for the standardized test workflow.
+The bot uses long polling. It does not require a public server.
+
+See `../docs/telegram-bot.md` for enrollment, storage, and user workflow details.
 
 ## CLI
 
 ```bash
 lectra-voice backends
-lectra-voice parse ../examples/tts-bakeoff-narration.md
-lectra-voice generate --help
+lectra-voice parse ../examples/example-narration.md
+lectra-voice generate ../examples/example-narration.md \
+  --reference-audio /path/to/reference.wav \
+  --output presentation.mp3
 ```
 
-The current adapters intentionally do not reinterpret narration. Only parsed speech segments are sent to the TTS backend. Metadata, headings, comments, slide numbers, lists, tables, and code blocks remain non-spoken.
+Only parsed speech segments are sent to TTS. YAML frontmatter, comments, headings, slide numbers, tables, lists, and code blocks remain non-spoken.

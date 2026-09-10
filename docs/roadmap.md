@@ -8,35 +8,39 @@
 - Add local service health and parse endpoints.
 - Test that metadata never leaks into speech.
 
-## Milestone 1: local TTS CLI and bake-off - in progress
+## Milestone 1: local TTS CLI and bake-off - complete
 
-- Add a common local TTS adapter interface.
-- Implement Qwen3-TTS Base voice cloning.
-- Implement Chatterbox voice cloning.
-- Add CLI parse, backend inspection, dry-run, and generation commands.
-- Render sequential WAV without holding an entire talk in memory.
-- Insert explicit pause directives as silence.
-- Convert final WAV to MP3 through local FFmpeg.
-- Use the same reference script and 3-minute academic narration for both models.
-- Run both models on a GPU machine and score speaker similarity, presentation-like prosody, text fidelity, medical terminology, long-form stability, and controllability.
+- Implement Qwen3-TTS Base and Chatterbox adapters.
+- Add CLI parsing, dry-run, generation, WAV rendering, pauses, and MP3 conversion.
+- Run both models with the same real voice reference and narration.
+- Select Chatterbox as the default because it was substantially more stable across presentation segments.
+- Keep Qwen3-TTS as an optional backend because its individual-sentence speaker match was strong but identity drift remained noticeable.
 
-CosyVoice remains a possible third comparator if Qwen3-TTS and Chatterbox do not produce a clear winner.
+## Milestone 2: voice profiles and Telegram MVP - in progress
 
-## Milestone 2: rendering reliability
+- Store voice profiles locally by numeric Telegram user ID.
+- Require voice ownership/permission confirmation.
+- Normalize Telegram voice/audio samples to local 24 kHz mono WAV.
+- Support enrollment, listing, default selection, and deletion.
+- Accept and validate `presentation-narration.md` uploads.
+- Send generation jobs to the local FastAPI service.
+- Return generated MP3 through Telegram.
+- Use polling so no public webhook is required.
+
+## Milestone 3: rendering reliability
 
 - Honor pace directives without changing speaker pitch.
 - Add content-addressed chunk caching.
 - Add per-slide and per-segment regeneration.
 - Persist generation manifests and backend settings.
 - Add optional loudness normalization.
+- Add automatic retry for failed segments.
 
-## Milestone 3: voice profiles
+## Milestone 4: speech QA
 
-Add local enrollment, listing, selection, and deletion of voice profiles. Keep voice samples outside Git and require voice ownership/permission confirmation. Prefer a fixed Lectra presentation-style reference script so the matching transcript is already available to backends that need it.
-
-## Milestone 4: Telegram bot
-
-Add Telegram handlers for setup, voice enrollment, narration upload, generation, settings, and audio delivery. Use Telegram numeric user IDs for local profile isolation.
+- Add local ASR verification of generated speech.
+- Flag mismatches in numbers, percentages, names, abbreviations, and clinical terminology.
+- Add pronunciation overrides.
 
 ## Milestone 5: end-to-end presentation workflow
 
@@ -47,10 +51,3 @@ Test three distinct use cases:
 3. CSV plus report to results presentation.
 
 Validate source grounding, PPTX/script/narration synchronization, timing, and final audio quality.
-
-## Later reliability work
-
-- ASR-based verification of generated speech;
-- pronunciation overrides for names and medical terminology;
-- additional local TTS adapters;
-- optional local network deployment to a separate GPU workstation.
