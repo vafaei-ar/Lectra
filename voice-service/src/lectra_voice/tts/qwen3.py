@@ -131,6 +131,11 @@ class Qwen3TTSBackend(TTSBackend):
             text=request.text,
             language=self._language_name(request.language),
             voice_clone_prompt=prompt,
+            # Qwen3-TTS currently defaults this to False, which simulates
+            # streaming text input and can cause speaking-rate drift in offline
+            # generation. Lectra is an offline presentation renderer, so use the
+            # full-text prompt layout explicitly for more stable delivery.
+            non_streaming_mode=True,
         )
         return AudioChunk(
             samples=np.asarray(wavs[0]),
@@ -140,5 +145,6 @@ class Qwen3TTSBackend(TTSBackend):
                 "model_id": self.model_id,
                 "pace_honored": False,
                 "tone_honored": False,
+                "non_streaming_mode": True,
             },
         )
