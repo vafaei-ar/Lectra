@@ -16,6 +16,7 @@ ALLOWED = {
 DIRECTIVE_RE = re.compile(r"^\s*<!--\s*([a-zA-Z_]+)\s*:\s*(.*?)\s*-->\s*$")
 URL_RE = re.compile(r"https?://|www\.", re.I)
 SLIDE_SPOKEN_RE = re.compile(r"\bslide\s+\d+\b", re.I)
+WORD_RE = re.compile(r"\b[\w'-]+\b")
 
 
 def parse_frontmatter(lines: list[str]) -> tuple[dict[str, str], int, list[str]]:
@@ -44,7 +45,7 @@ def parse_frontmatter(lines: list[str]) -> tuple[dict[str, str], int, list[str]]
     return metadata, end + 1, errors
 
 
-def validate(path: Path) -> tuple[list[str], list[str]]:
+def validate(path: Path) -> tuple[list[str], list[str], dict[str, float | int | None]]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     metadata, body_start, errors = parse_frontmatter(lines)
@@ -55,6 +56,17 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     if not metadata.get("title", "").strip():
         errors.append("title is required in front matter.")
 
+    target_duration: float | None = None
+    raw_target = metadata.get("target_duration_minutes")
+    if raw_target is not None and str(raw_target).strip():
+        try:
+            target_duration = float(raw_target)
+            if target_duration <= 0:
+                raise ValueError
+        except ValueError:
+            errors.append("target_duration_minutes must be a positive number when provided.")
+            target_duration = None
+
     slide_numbers: list[int] = []
     spoken_lines: list[str] = []
     in_code = False
@@ -62,8 +74,11 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
     for lineno, line in enumerate(lines[body_start:], start=body_start + 1):
         stripped = line.strip()
         if stripped.startswith("```"):
+            if not in_code:
+                warnings.append(
+                    f"Line {lineno}: fenced code is never spoken and should not appear in narration output."
+                )
             in_code = not in_code
-            warnings.append(f"Line {lineno}: fenced code is never spoken and should not appear in narration output.")
             continue
         if in_code or not stripped:
             continue
@@ -103,16 +118,30 @@ def validate(path: Path) -> tuple[list[str], list[str]]:
         if URL_RE.search(stripped):
             warnings.append(f"Line {lineno}: URL appears in spoken prose.")
         if SLIDE_SPOKEN_RE.search(stripped):
-            warnings.append(f"Line {lineno}: literal slide-number language appears in spoken prose; confirm it is intentional.")
+            warnings.append(
+                f"Line {lineno}: literal slide-number language appears in spoken prose; confirm it is intentional."
+            )
 
     if not slide_numbers:
         errors.append("At least one <!-- slide: N --> directive is required.")
     if any(b <= a for a, b in zip(slide_numbers, slide_numbers[1:])):
-        errors.append("Slide directives must be strictly increasing.")
+        errors.append(
+            "Slide directives must be strictly increasing. Lectra narration is a linear timeline; "
+            "gaps are allowed, but callbacks should be expressed in speech without moving the slide marker backward."
+        )
     if not spoken_lines:
         errors.append("Narration contains no spoken prose.")
 
-    return errors, warnings
+    word_count = sum(len(WORD_RE.findall(line)) for line in spoken_lines)
+    min_minutes = word_count / 150 if word_count else 0.0
+    max_minutes = word_count / 120 if word_count else 0.0
+    timing = {
+        "word_count": word_count,
+        "min_minutes": min_minutes,
+        "max_minutes": max_minutes,
+        "target_minutes": target_duration,
+    }
+    return errors, warnings, timing
 
 
 def main() -> int:
@@ -124,11 +153,21 @@ def main() -> int:
         print(f"ERROR: file not found: {path}", file=sys.stderr)
         return 2
 
-    errors, warnings = validate(path)
+    errors, warnings, timing = validate(path)
     for item in warnings:
         print(f"WARNING: {item}")
     for item in errors:
         print(f"ERROR: {item}", file=sys.stderr)
+
+    words = int(timing["word_count"] or 0)
+    lo = float(timing["min_minutes"] or 0.0)
+    hi = float(timing["max_minutes"] or 0.0)
+    target = timing["target_minutes"]
+    print(f"INFO: spoken words={words}; estimated speech time={lo:.1f}-{hi:.1f} minutes at 150-120 wpm.")
+    if target is not None:
+        print(
+            f"INFO: target_duration_minutes={float(target):g}; compare target with the estimate and planned pauses manually."
+        )
 
     if errors:
         print(f"FAILED: {len(errors)} error(s), {len(warnings)} warning(s).", file=sys.stderr)
