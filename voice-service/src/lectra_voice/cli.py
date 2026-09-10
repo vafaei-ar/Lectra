@@ -8,7 +8,7 @@ from pathlib import Path
 from .audio import AudioRenderError, render_segments
 from .models import SpeechSegment
 from .parser import NarrationParseError, parse_narration
-from .tts import backend_availability, create_backend
+from .tts import DEFAULT_BACKEND, backend_availability, create_backend
 
 
 def _load_markdown(path: Path) -> str:
@@ -43,7 +43,8 @@ def _backends_command(_: argparse.Namespace) -> int:
     availability = backend_availability()
     for name, installed in availability.items():
         state = "installed" if installed else "not installed"
-        print(f"{name}: {state}")
+        default = " (default)" if name == DEFAULT_BACKEND else ""
+        print(f"{name}: {state}{default}")
     return 0
 
 
@@ -124,7 +125,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     generate_parser = subparsers.add_parser("generate", help="Generate WAV or MP3 from narration Markdown.")
     generate_parser.add_argument("input", type=Path)
-    generate_parser.add_argument("--backend", choices=["qwen3", "chatterbox"], required=True)
+    generate_parser.add_argument(
+        "--backend",
+        choices=["chatterbox", "qwen3"],
+        default=DEFAULT_BACKEND,
+        help=f"TTS backend. Default: {DEFAULT_BACKEND}.",
+    )
     generate_parser.add_argument("--reference-audio", type=Path, required=True)
     reference_group = generate_parser.add_mutually_exclusive_group()
     reference_group.add_argument("--reference-text", help="Transcript of the reference audio.")

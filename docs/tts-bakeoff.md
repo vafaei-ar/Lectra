@@ -1,23 +1,31 @@
 # Local TTS bake-off
 
-Lectra's first voice milestone compares local voice-cloning backends using the same reference recording and narration. The goal is not real-time speed. The goal is speaker similarity, presentation-like delivery, text fidelity, medical pronunciation, and long-form stability.
+Lectra's first voice milestone compared local voice-cloning backends using the same reference recording and narration. The goal was speaker similarity, presentation-like delivery, text fidelity, medical pronunciation, and long-form stability rather than real-time speed.
+
+## Result
+
+The initial real-voice bake-off selected **Chatterbox as Lectra's default backend**.
+
+Observed behavior:
+
+- **Qwen3-TTS 1.7B Base** matched the reference speaker more closely on individual sentences, but the perceived voice changed more from segment to segment.
+- Enabling Qwen's non-streaming voice-clone mode improved the result, but did not remove the segment-to-segment voice drift enough for long-form presentation use.
+- **Chatterbox** was slightly less exact as a voice clone, but remained substantially more stable across sentences and was acceptable in speaker similarity.
+
+For Lectra's primary use case, stable identity across a 20-45 minute presentation is more important than maximizing similarity on an isolated sentence. Chatterbox is therefore the production default. Qwen3-TTS remains an optional experimental/fallback backend.
 
 ## Why the reference script is fixed
 
-Qwen3-TTS Base produces its strongest voice-cloning path from reference audio plus the matching transcript. Lectra therefore provides `examples/reference-voice-script.txt`. Record that script verbatim in a quiet room using a natural presentation voice. The same WAV file can then be used by both Qwen3-TTS and Chatterbox, while Qwen receives the already-known transcript.
+Lectra provides `examples/reference-voice-script.txt`. Record that script verbatim in a quiet room using a natural presentation voice. The recording is intentionally neutral and avoids domain-specific terminology. Do not commit personal voice recordings to Git.
 
-Do not commit personal voice recordings to Git.
+Qwen3-TTS Base can use the matching transcript for its ICL cloning path. Chatterbox uses the same reference WAV directly.
 
 ## Test material
 
 - Reference transcript: `examples/reference-voice-script.txt`
 - Standardized narration: `examples/tts-bakeoff-narration.md`
 
-The narration intentionally includes numbers, abbreviations, clinical terminology, slide boundaries, pauses, and tone changes.
-
 ## Base installation
-
-Use Python 3.11 or 3.12. Install Lectra's base voice service first:
 
 ```bash
 cd voice-service
@@ -28,37 +36,9 @@ pip install -e '.[dev]'
 lectra-voice parse ../examples/tts-bakeoff-narration.md
 ```
 
-The base installation does not install a TTS model.
+## Chatterbox production environment
 
-## Qwen3-TTS environment
-
-Use a dedicated environment because speech packages may pin different PyTorch stacks.
-
-```bash
-cd voice-service
-python -m venv .venv-qwen
-source .venv-qwen/bin/activate
-python -m pip install -U pip
-pip install -e '.[qwen3]'
-```
-
-Generate WAV:
-
-```bash
-lectra-voice generate ../examples/tts-bakeoff-narration.md \
-  --backend qwen3 \
-  --reference-audio /path/to/reference.wav \
-  --reference-text-file ../examples/reference-voice-script.txt \
-  --output qwen3.wav
-```
-
-The default is `Qwen/Qwen3-TTS-12Hz-1.7B-Base`. Use `--qwen-model Qwen/Qwen3-TTS-12Hz-0.6B-Base` if memory is limited. `--qwen-flash-attention` is optional and should only be used after FlashAttention 2 is installed correctly.
-
-If a matching transcript is unavailable, `--qwen-x-vector-only` explicitly enables speaker-embedding-only cloning without a reference transcript. This is a fallback, not the preferred benchmark path.
-
-## Chatterbox environment
-
-Create a separate environment:
+Use Chatterbox for the normal Lectra voice service:
 
 ```bash
 cd voice-service
@@ -68,44 +48,52 @@ python -m pip install -U pip
 pip install -e '.[chatterbox]'
 ```
 
-Generate WAV:
+Generate with the default backend:
 
 ```bash
 lectra-voice generate ../examples/tts-bakeoff-narration.md \
-  --backend chatterbox \
   --reference-audio /path/to/reference.wav \
   --output chatterbox.wav
 ```
 
-The initial adapter uses the original English Chatterbox model rather than Turbo because the original model exposes CFG and exaggeration controls. Lectra maps its tone directives conservatively to those controls. Pace directives are preserved in the parsed representation but are not yet modified by either backend.
+You can still specify `--backend chatterbox` explicitly.
 
-## MP3
+## Qwen3-TTS optional environment
 
-If `ffmpeg` is available on PATH, use an `.mp3` output path directly. Lectra renders a temporary WAV locally and converts it with FFmpeg.
+Keep Qwen in a separate environment when needed:
 
-## Dry run
+```bash
+cd voice-service
+python -m venv .venv-qwen
+source .venv-qwen/bin/activate
+python -m pip install -U pip
+pip install -e '.[qwen3]'
+```
 
-Validate the full request without loading model weights:
+Generate:
 
 ```bash
 lectra-voice generate ../examples/tts-bakeoff-narration.md \
   --backend qwen3 \
   --reference-audio /path/to/reference.wav \
   --reference-text-file ../examples/reference-voice-script.txt \
-  --output qwen3.wav \
-  --dry-run
+  --output qwen3.wav
 ```
 
-## Initial scoring
+The Qwen adapter forces offline `non_streaming_mode=True` because simulated-streaming voice cloning showed rate drift during testing.
 
-Score each output from 1 to 5 for:
+## MP3
 
-1. speaker similarity;
-2. presentation-like prosody;
-3. text fidelity;
-4. medical terminology and numbers;
-5. stability across the full narration;
-6. natural pauses and transitions;
-7. installation/runtime practicality.
+If `ffmpeg` is available on PATH, use an `.mp3` output path directly. Lectra renders locally and converts the final output with FFmpeg.
 
-Do not select the default backend from documentation claims alone. Select it after listening to the same narration generated from the same voice sample.
+## Decision criteria
+
+The comparison prioritized:
+
+1. stable speaker identity across a full presentation;
+2. natural presentation prosody;
+3. speaker similarity;
+4. text and pronunciation fidelity;
+5. runtime practicality.
+
+Future model changes should be evaluated using the same reference recording and narration rather than documentation claims alone.
