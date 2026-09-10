@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lectra-voice"
-version = "0.2.0"
-description = "Local voice rendering service for Lectra presentation narration"
+version = "0.3.0"
+description = "Local voice rendering service and Telegram bot for Lectra presentation narration"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.110",
@@ -17,12 +17,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+dev = ["pytest>=8.0", "httpx>=0.27,<1"]
 qwen3 = ["qwen-tts"]
 chatterbox = ["chatterbox-tts>=0.1.7"]
+telegram = ["python-telegram-bot>=22.8,<23", "httpx>=0.27,<1"]
 
 [project.scripts]
 lectra-voice = "lectra_voice.cli:main"
+lectra-bot = "lectra_voice.telegram_bot:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
