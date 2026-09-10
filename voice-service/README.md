@@ -10,10 +10,27 @@ Chatterbox is the default TTS backend after the initial real-voice bake-off. Qwe
 python -m venv .venv-chatterbox
 source .venv-chatterbox/bin/activate
 python -m pip install -U pip
-pip install -e '.[chatterbox,telegram]'
+python -m pip install -e '.[chatterbox,telegram]'
 ```
 
 FFmpeg is required. For NVIDIA systems, install a PyTorch build compatible with the machine's NVIDIA driver before installing model packages if necessary.
+
+## Development and tests
+
+When testing inside a virtual environment, invoke both pip and pytest through that environment's Python. This avoids accidentally using a Conda/base `pytest` executable when both environments are active.
+
+```bash
+python -m pip install -e '.[telegram,dev]'
+python -m pytest -q
+```
+
+To confirm the active interpreter when troubleshooting:
+
+```bash
+which python
+python -c 'import sys; print(sys.executable)'
+python -c 'import soundfile; print(soundfile.__file__)'
+```
 
 ## Run the service
 
