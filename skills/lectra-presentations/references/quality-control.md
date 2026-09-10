@@ -16,6 +16,8 @@ Confirm that slides summarize and visualize while the script explains. Avoid usi
 
 ## Synchronization
 
+When the host exposes bundled Skill files, run `scripts/validate_bundle.py` with `python3` using the actual Skill path supplied or discoverable in that session. Never guess a mount path. If the script is unavailable, perform the same structural checks directly with the host's available tools. This does not replace semantic review.
+
 For every final slide:
 
 - confirm a corresponding script section exists when narration is expected;
@@ -23,13 +25,15 @@ For every final slide:
 - remove script/narration for deleted slides;
 - confirm transitions refer to what actually comes next.
 
+Narration slide directives intentionally move forward only because the narration is a linear presentation timeline. Gaps are allowed so silent title, transition, appendix, or backup slides can remain in the deck.
+
 ## Narration hygiene
 
-Run `scripts/validate_narration.py`. Treat validation errors as blocking. Review warnings manually. In particular, remove accidental URLs, Markdown structures, and literal slide-number language that is not intended to be spoken.
+When the host exposes bundled Skill files, run `scripts/validate_narration.py` with `python3` using the actual Skill path supplied or discoverable in that session. Never guess a mount path. If the script is unavailable, apply the narration schema and hygiene checks directly. Treat detected validation errors as blocking. Review warnings manually. In particular, remove accidental URLs, Markdown structures, and literal slide-number language that is not intended to be spoken.
 
 ## Timing
 
-Estimate spoken duration from word count and presentation context. Do not pad content solely to hit a target duration. Prefer approximately 120-150 spoken words per minute for ordinary English academic presentation planning unless user-specific pacing is known.
+Estimate spoken duration from word count and presentation context. Do not pad content solely to hit a target duration. Prefer approximately 120-150 spoken words per minute for ordinary English academic presentation planning unless user-specific pacing is known. When `target_duration_minutes` is provided, confirm it is a positive number and compare it with the estimated duration and planned pauses.
 
 ## Final artifact check
 
