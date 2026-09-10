@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from . import __version__
 from .models import ParseRequest, ParsedNarration
 from .parser import NarrationParseError, parse_narration
+from .tts import backend_availability
 
 app = FastAPI(
     title="Lectra Voice Service",
@@ -20,7 +21,7 @@ def health() -> dict[str, object]:
         "service": "lectra-voice",
         "version": __version__,
         "supported_narration_schemas": ["1.0"],
-        "tts_backends": [],
+        "tts_backends": backend_availability(),
     }
 
 

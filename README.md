@@ -2,7 +2,7 @@
 
 Lectra turns source material into an editable presentation, a presenter script, and a clean narration file, then converts that narration to presentation-style speech using a local voice-cloning service.
 
-Lectra is designed around two independent components joined by one versioned file contract:
+Lectra has two independent components joined by one versioned file contract:
 
 1. **Lectra Presentations Skill**: runs inside ChatGPT or Claude. It inspects user-provided material, asks only necessary questions, proposes a presentation plan, and generates `presentation.pptx`, `presentation-script.md`, and `presentation-narration.md`.
 2. **Lectra Voice Service**: runs locally on a laptop or GPU workstation. It parses `presentation-narration.md`, applies presentation controls, synthesizes speech with a local TTS backend, and later exposes that capability through a Telegram bot.
@@ -32,12 +32,13 @@ ChatGPT / Claude + Lectra Skill
 
 ## Current status
 
-Lectra is in bootstrap development. Version 0.1 focuses on:
+Milestone 0 is complete. The repository now contains narration schema 1.0, the presentation Skill scaffold, deterministic narration parsing, and metadata-leak tests.
 
-- narration schema 1.0;
-- deterministic narration parsing;
-- Skill workflow and output contracts;
-- a local FastAPI service skeleton;
-- tests that prevent metadata from leaking into speech.
+Milestone 1 is in progress. The local voice service now has a CLI and optional Qwen3-TTS and Chatterbox adapters for a controlled local bake-off. The actual acoustic comparison must run on a machine with the model weights, GPU/CPU runtime, and a real reference voice recording.
 
-See `docs/architecture.md` and `docs/roadmap.md`.
+See:
+
+- `docs/architecture.md`
+- `docs/narration-schema.md`
+- `docs/tts-bakeoff.md`
+- `docs/roadmap.md`
