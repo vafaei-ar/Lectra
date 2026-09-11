@@ -15,6 +15,25 @@ python -m pip install -e '.[chatterbox,telegram]'
 
 FFmpeg is required. For NVIDIA systems, install a PyTorch build compatible with the machine's NVIDIA driver before installing model packages if necessary.
 
+## Simplest run: one terminal, one command
+
+Set the Telegram bot token in your shell environment, then run Lectra:
+
+```bash
+export TELEGRAM_BOT_TOKEN='your-token'
+lectra
+```
+
+`lectra` starts the local FastAPI voice service automatically, waits until it is healthy, then starts the Telegram bot in the same terminal. Press `Ctrl+C` once to stop both. If a healthy local service is already running, Lectra reuses it instead of starting a duplicate.
+
+Defaults:
+
+- data: `~/.local/share/lectra`
+- device: `cuda`
+- local service: `http://127.0.0.1:8000`
+
+Optional overrides remain available through `LECTRA_DATA_DIR`, `LECTRA_DEVICE`, and `LECTRA_VOICE_SERVICE_URL`, or through `lectra --help`.
+
 ## Development and tests
 
 When testing inside a virtual environment, invoke both pip and pytest through that environment's Python. This avoids accidentally using a Conda/base `pytest` executable when both environments are active.
@@ -32,17 +51,19 @@ python -c 'import sys; print(sys.executable)'
 python -c 'import soundfile; print(soundfile.__file__)'
 ```
 
-## Run the service
+## Manual two-process mode for debugging
+
+The normal user flow should use `lectra`. The commands below are retained only when debugging the HTTP service and Telegram bot separately.
+
+Terminal 1:
 
 ```bash
 export LECTRA_DATA_DIR="$HOME/.local/share/lectra"
 export LECTRA_DEVICE=cuda
-uvicorn lectra_voice.service:app --host 127.0.0.1 --port 8000
+python -m uvicorn lectra_voice.service:app --host 127.0.0.1 --port 8000
 ```
 
-The service keeps the TTS backend warm after first use and serializes GPU rendering jobs.
-
-## Run the Telegram bot
+Terminal 2:
 
 ```bash
 export TELEGRAM_BOT_TOKEN='your-token'
@@ -52,7 +73,7 @@ lectra-bot
 
 The bot uses long polling. It does not require a public server.
 
-See `../docs/telegram-bot.md` for enrollment, storage, and user workflow details.
+See `../docs/telegram-bot.md` for enrollment, storage, progress reporting, error reporting, and user workflow details.
 
 ## CLI
 
