@@ -25,6 +25,7 @@ from .enrollment import REFERENCE_VOICE_SCRIPT, AudioPreparationError, normalize
 from .models import SpeechSegment
 from .parser import NarrationParseError, parse_narration
 from .profiles import VoiceProfileError, VoiceStore
+from .telegram_text import receive_text
 from .tts import DEFAULT_BACKEND
 
 
@@ -132,10 +133,10 @@ def _progress_text(title: str, status: dict[str, object]) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     await update.message.reply_text(
-        "Lectra turns a presentation narration Markdown file into presentation-style audio.\n\n"
+        "Lectra turns text or a presentation narration Markdown file into audio in your local voice profile.\n\n"
         "1. Run /setupvoice once.\n"
-        "2. Send a presentation-narration.md file.\n"
-        "3. Tap Generate audio.\n\n"
+        "2. Send ordinary text to have Lectra read it immediately, or send presentation-narration.md for a full presentation.\n"
+        "3. For narration files, tap Generate audio.\n\n"
         "Telegram transports your messages and files. Lectra stores the voice profile and runs "
         "TTS locally; it does not send the voice sample to a separate cloud TTS service."
     )
@@ -237,7 +238,7 @@ async def receive_voice_sample(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.user_data.pop("pending_voice_id", None)
     context.user_data.pop("awaiting_voice_sample", None)
-    await message.reply_text(f"Voice profile '{voice_id}' is ready. Send a presentation-narration.md file when you are ready.")
+    await message.reply_text(f"Voice profile '{voice_id}' is ready. Send text or a presentation-narration.md file when you are ready.")
 
 
 async def list_voices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -477,7 +478,8 @@ async def service_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"Service: {payload.get('status', 'unknown')}\n"
         f"Version: {payload.get('version', 'unknown')}\n"
         f"Default TTS: {payload.get('default_tts_backend', 'unknown')}\n"
-        f"Progress reporting: {'yes' if payload.get('progress_reporting') else 'no'}"
+        f"Progress reporting: {'yes' if payload.get('progress_reporting') else 'no'}\n"
+        f"Plain text TTS: {'yes' if payload.get('plain_text_tts') else 'no'}"
     )
 
 
@@ -527,6 +529,7 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("health", service_health))
     application.add_handler(CallbackQueryHandler(voice_consent, pattern=r"^voice-consent:"))
     application.add_handler(CallbackQueryHandler(narration_action, pattern=r"^narration:"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
     application.add_handler(
         MessageHandler(filters.VOICE | filters.AUDIO | filters.Document.AUDIO, receive_voice_sample)
     )
