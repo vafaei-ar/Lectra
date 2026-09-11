@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lectra-voice"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local voice rendering service and Telegram bot for Lectra presentation narration"
 requires-python = ">=3.10"
 dependencies = [
