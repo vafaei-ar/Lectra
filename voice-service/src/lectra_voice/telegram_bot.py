@@ -4,13 +4,21 @@ import asyncio
 import io
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 
 import httpx
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from .enrollment import REFERENCE_VOICE_SCRIPT, AudioPreparationError, normalize_reference_audio
 from .models import SpeechSegment
@@ -23,6 +31,8 @@ LOGGER = logging.getLogger(__name__)
 MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024
 MAX_NARRATION_BYTES = 2 * 1024 * 1024
 MAX_TELEGRAM_AUDIO_BYTES = 50 * 1024 * 1024
+PROGRESS_POLL_SECONDS = 2.0
+TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
 
 STORE = VoiceStore()
 SERVICE_URL = os.getenv("LECTRA_VOICE_SERVICE_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -53,6 +63,63 @@ def _generation_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _redact_secrets(value: object, limit: int = 900) -> str:
+    text = TOKEN_RE.sub("<redacted-bot-token>", str(value))
+    return text[:limit]
+
+
+def _response_error(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        if detail:
+            return _redact_secrets(detail)
+    except ValueError:
+        pass
+    return _redact_secrets(response.text or f"HTTP {response.status_code}")
+
+
+def _progress_bar(percent: int, width: int = 12) -> str:
+    percent = max(0, min(int(percent), 100))
+    filled = round(width * percent / 100)
+    return "█" * filled + "░" * (width - filled)
+
+
+def _format_elapsed(seconds: object) -> str:
+    try:
+        value = max(int(float(seconds)), 0)
+    except (TypeError, ValueError):
+        value = 0
+    minutes, secs = divmod(value, 60)
+    return f"{minutes}:{secs:02d}"
+
+
+def _progress_text(title: str, status: dict[str, object]) -> str:
+    stage = str(status.get("stage") or "queued")
+    completed = int(status.get("completed_segments") or 0)
+    total = int(status.get("total_segments") or 0)
+    percent = int(status.get("percent") or 0)
+    elapsed = _format_elapsed(status.get("elapsed_seconds"))
+    labels = {
+        "queued": "Queued",
+        "waiting_for_gpu": "Waiting for GPU",
+        "loading_model": f"Loading {DEFAULT_BACKEND}",
+        "synthesizing": "Generating speech",
+        "encoding": "Encoding MP3",
+        "completed": "Generation complete",
+        "failed": "Generation failed",
+    }
+    label = labels.get(stage, stage.replace("_", " ").title())
+    lines = [f"Generating: {title}", label]
+    if total:
+        lines.extend([
+            f"{_progress_bar(percent)} {percent}%",
+            f"Segments: {completed}/{total}",
+        ])
+    lines.append(f"Elapsed: {elapsed}")
+    return "\n".join(lines)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     await update.message.reply_text(
@@ -73,7 +140,6 @@ async def setup_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except VoiceProfileError as exc:
         await update.message.reply_text(str(exc))
         return
-
     context.user_data["pending_voice_id"] = voice_id
     context.user_data.pop("awaiting_voice_sample", None)
     await update.message.reply_text(
@@ -94,7 +160,6 @@ async def voice_consent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         context.user_data.pop("awaiting_voice_sample", None)
         await query.edit_message_text("Voice setup cancelled.")
         return
-
     context.user_data["awaiting_voice_sample"] = True
     await query.edit_message_text(
         "Consent confirmed. Now record yourself reading the text below in your normal "
@@ -116,12 +181,7 @@ async def receive_voice_sample(update: Update, context: ContextTypes.DEFAULT_TYP
     if not context.user_data.get("awaiting_voice_sample"):
         await message.reply_text("Use /setupvoice before sending a voice sample.")
         return
-
-    document_audio = (
-        message.document
-        if message.document and (message.document.mime_type or "").startswith("audio/")
-        else None
-    )
+    document_audio = message.document if message.document and (message.document.mime_type or "").startswith("audio/") else None
     attachment = message.voice or message.audio or document_audio
     if attachment is None:
         return
@@ -129,15 +189,10 @@ async def receive_voice_sample(update: Update, context: ContextTypes.DEFAULT_TYP
     if file_size and file_size > MAX_TELEGRAM_DOWNLOAD_BYTES:
         await message.reply_text("That recording is too large for the Telegram Bot API. Please send a shorter sample.")
         return
-
     voice_id = str(context.user_data.get("pending_voice_id") or "default")
-    if message.voice:
-        suffix = ".ogg"
-    else:
-        suffix = Path(getattr(attachment, "file_name", "sample.mp3") or "sample.mp3").suffix
+    suffix = ".ogg" if message.voice else Path(getattr(attachment, "file_name", "sample.mp3") or "sample.mp3").suffix
     if not suffix:
         suffix = ".audio"
-
     await message.reply_chat_action(ChatAction.TYPING)
     try:
         with tempfile.TemporaryDirectory(prefix="lectra-enroll-") as temp_dir:
@@ -156,9 +211,8 @@ async def receive_voice_sample(update: Update, context: ContextTypes.DEFAULT_TYP
             )
     except (AudioPreparationError, VoiceProfileError, OSError) as exc:
         LOGGER.exception("Voice enrollment failed")
-        await message.reply_text(f"Voice setup failed: {exc}")
+        await message.reply_text(f"Voice setup failed: {_redact_secrets(exc)}")
         return
-
     context.user_data.pop("pending_voice_id", None)
     context.user_data.pop("awaiting_voice_sample", None)
     await message.reply_text(f"Voice profile '{voice_id}' is ready. Send a presentation-narration.md file when you are ready.")
@@ -217,10 +271,7 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     default_voice = STORE.default_voice_id(_user_id(update)) or "not configured"
     await update.message.reply_text(
-        f"Default TTS: {DEFAULT_BACKEND}\n"
-        f"Default voice: {default_voice}\n"
-        f"Device: {DEVICE}\n"
-        f"Local service: {SERVICE_URL}"
+        f"Default TTS: {DEFAULT_BACKEND}\nDefault voice: {default_voice}\nDevice: {DEVICE}\nLocal service: {SERVICE_URL}"
     )
 
 
@@ -241,13 +292,11 @@ async def receive_narration(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if document.file_size and document.file_size > MAX_NARRATION_BYTES:
         await message.reply_text("That Markdown file is unexpectedly large. Lectra limits narration files to 2 MB.")
         return
-
     try:
         STORE.get_voice(_user_id(update))
     except VoiceProfileError:
         await message.reply_text("Set up a voice first with /setupvoice.")
         return
-
     try:
         with tempfile.TemporaryDirectory(prefix="lectra-md-") as temp_dir:
             path = Path(temp_dir) / "narration.md"
@@ -258,18 +307,15 @@ async def receive_narration(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await message.reply_text("The narration file must be UTF-8 Markdown.")
         return
     except (NarrationParseError, OSError) as exc:
-        await message.reply_text(f"Narration validation failed: {exc}")
+        await message.reply_text(f"Narration validation failed: {_redact_secrets(exc)}")
         return
-
     title = str(parsed.metadata.get("title") or "Presentation")
     minutes = _estimate_minutes(parsed)
     context.user_data["pending_narration"] = markdown
     context.user_data["pending_title"] = title
     context.user_data["pending_minutes"] = minutes
     await message.reply_text(
-        f"Ready to generate: {title}\n"
-        f"Speech segments: {sum(isinstance(s, SpeechSegment) for s in parsed.segments)}\n"
-        f"Estimated speech time: about {minutes:.1f} minutes",
+        f"Ready to generate: {title}\nSpeech segments: {sum(isinstance(s, SpeechSegment) for s in parsed.segments)}\nEstimated speech time: about {minutes:.1f} minutes",
         reply_markup=_generation_keyboard(),
     )
 
@@ -286,23 +332,16 @@ async def narration_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         context.user_data.pop("pending_minutes", None)
         await query.edit_message_text("Generation cancelled.")
         return
-
     markdown = context.user_data.get("pending_narration")
     if not isinstance(markdown, str):
         await query.edit_message_text("No pending narration. Send the Markdown file again.")
         return
-
     user_id = _user_id(update)
     voice_id = STORE.default_voice_id(user_id)
     if not voice_id:
         await query.edit_message_text("No default voice profile. Use /setupvoice first.")
         return
-
     title = str(context.user_data.get("pending_title") or "Presentation")
-    await query.edit_message_text(f"Generating '{title}' with {DEFAULT_BACKEND}. This may take a while for a long presentation.")
-    if query.message is not None:
-        await query.message.reply_chat_action(ChatAction.UPLOAD_AUDIO)
-
     payload = {
         "telegram_user_id": user_id,
         "markdown": markdown,
@@ -312,31 +351,61 @@ async def narration_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "output_format": "mp3",
     }
     try:
-        timeout = httpx.Timeout(3600.0, connect=10.0)
+        await query.edit_message_text(f"Starting audio generation: {title}")
+        timeout = httpx.Timeout(120.0, connect=10.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(f"{SERVICE_URL}/v1/render", json=payload)
-        if response.status_code != 200:
-            detail = response.text[:1000]
-            raise RuntimeError(f"voice service returned HTTP {response.status_code}: {detail}")
-        if len(response.content) > MAX_TELEGRAM_AUDIO_BYTES:
-            raise RuntimeError("generated MP3 exceeds Telegram's 50 MB bot upload limit")
-    except (httpx.HTTPError, RuntimeError) as exc:
-        LOGGER.exception("Narration generation failed")
-        if query.message is not None:
-            await query.message.reply_text(f"Generation failed: {exc}")
-        return
-
-    audio = io.BytesIO(response.content)
-    audio.name = "presentation.mp3"
-    if query.message is not None:
+            response = await client.post(f"{SERVICE_URL}/v1/render/jobs", json=payload)
+            if response.status_code != 202:
+                raise RuntimeError(f"voice service returned HTTP {response.status_code}: {_response_error(response)}")
+            job = response.json()
+            job_id = str(job.get("job_id") or "")
+            if not job_id:
+                raise RuntimeError("voice service did not return a render job ID")
+            last_text = ""
+            while True:
+                status_response = await client.get(f"{SERVICE_URL}/v1/render/jobs/{job_id}")
+                if status_response.status_code != 200:
+                    raise RuntimeError(
+                        f"could not read generation status: HTTP {status_response.status_code}: {_response_error(status_response)}"
+                    )
+                status = status_response.json()
+                state = str(status.get("state") or "")
+                progress_text = _progress_text(title, status)
+                if progress_text != last_text:
+                    await query.edit_message_text(progress_text)
+                    last_text = progress_text
+                if state == "failed":
+                    raise RuntimeError(str(status.get("error") or "audio generation failed"))
+                if state == "completed":
+                    break
+                await asyncio.sleep(PROGRESS_POLL_SECONDS)
+            await query.edit_message_text(f"Generation complete: {title}\nUploading MP3 to Telegram...")
+            audio_response = await client.get(f"{SERVICE_URL}/v1/render/jobs/{job_id}/audio")
+            if audio_response.status_code != 200:
+                raise RuntimeError(
+                    f"could not retrieve generated audio: HTTP {audio_response.status_code}: {_response_error(audio_response)}"
+                )
+            if len(audio_response.content) > MAX_TELEGRAM_AUDIO_BYTES:
+                raise RuntimeError("generated MP3 exceeds Telegram's 50 MB bot upload limit")
+        audio = io.BytesIO(audio_response.content)
+        audio.name = "presentation.mp3"
+        if query.message is None:
+            raise RuntimeError("Telegram callback message is unavailable for audio delivery")
         await query.message.reply_audio(
             audio=audio,
             title=title,
             performer="Lectra",
             caption=f"Generated locally with {DEFAULT_BACKEND}.",
         )
-    await query.edit_message_text(f"Done: {title}")
-
+        await query.edit_message_text(f"Done: {title}")
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        safe_error = _redact_secrets(exc)
+        LOGGER.exception("Narration generation failed")
+        await query.edit_message_text(
+            f"Generation failed: {title}\n\n{safe_error}\n\nYou can retry generation.",
+            reply_markup=_generation_keyboard(),
+        )
+        return
     context.user_data.pop("pending_narration", None)
     context.user_data.pop("pending_title", None)
     context.user_data.pop("pending_minutes", None)
@@ -350,13 +419,25 @@ async def service_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        await update.message.reply_text(f"Lectra voice service is unavailable: {exc}")
+        await update.message.reply_text(f"Lectra voice service is unavailable: {_redact_secrets(exc)}")
         return
     await update.message.reply_text(
-        f"Service: {payload.get('status', 'unknown')}\n"
-        f"Version: {payload.get('version', 'unknown')}\n"
-        f"Default TTS: {payload.get('default_tts_backend', 'unknown')}"
+        f"Service: {payload.get('status', 'unknown')}\nVersion: {payload.get('version', 'unknown')}\nDefault TTS: {payload.get('default_tts_backend', 'unknown')}\nProgress reporting: {'yes' if payload.get('render_job_progress') else 'no'}"
     )
+
+
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    error = context.error
+    safe_error = _redact_secrets(error or "unknown error")
+    if isinstance(error, BaseException):
+        LOGGER.error("Unhandled Telegram bot error: %s", safe_error, exc_info=(type(error), error, error.__traceback__))
+    else:
+        LOGGER.error("Unhandled Telegram bot error: %s", safe_error)
+    if isinstance(update, Update) and update.effective_message is not None:
+        try:
+            await update.effective_message.reply_text(f"Lectra encountered an unexpected error:\n{safe_error}")
+        except Exception:
+            LOGGER.exception("Could not send Telegram error message")
 
 
 async def post_init(application: Application) -> None:
@@ -382,10 +463,9 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("health", service_health))
     application.add_handler(CallbackQueryHandler(voice_consent, pattern=r"^voice-consent:"))
     application.add_handler(CallbackQueryHandler(narration_action, pattern=r"^narration:"))
-    application.add_handler(
-        MessageHandler(filters.VOICE | filters.AUDIO | filters.Document.AUDIO, receive_voice_sample)
-    )
+    application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO | filters.Document.AUDIO, receive_voice_sample))
     application.add_handler(MessageHandler(filters.Document.ALL, receive_narration))
+    application.add_error_handler(on_error)
     return application
 
 
@@ -394,6 +474,8 @@ def main() -> None:
         level=os.getenv("LECTRA_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is required.")
