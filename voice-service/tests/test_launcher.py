@@ -104,13 +104,15 @@ def test_configuration_file_is_private(tmp_path, monkeypatch):
 def test_systemd_unit_runs_foreground_worker_without_embedding_token(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     text = launcher._unit_text()
+    env_path = os.path.abspath(tmp_path / "lectra" / "lectra.env")
 
     assert "lectra_voice.launcher foreground" in text
     assert "Restart=on-failure" in text
     assert "KillMode=control-group" in text
     assert "LECTRA_SYSTEMD_MANAGED=1" in text
     assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in text
-    assert str(tmp_path / "lectra" / "lectra.env") in text
+    assert f"EnvironmentFile={env_path}" in text
+    assert 'EnvironmentFile="' not in text
 
 
 def test_systemd_unit_preserves_venv_python_path(tmp_path, monkeypatch):
@@ -121,6 +123,14 @@ def test_systemd_unit_preserves_venv_python_path(tmp_path, monkeypatch):
     text = launcher._unit_text()
 
     assert f'ExecStart="{os.path.abspath(fake_venv_python)}" -m lectra_voice.launcher foreground' in text
+
+
+def test_systemd_unit_rejects_whitespace_in_environment_file_path(tmp_path, monkeypatch):
+    spaced = tmp_path / "config with spaces"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(spaced))
+
+    with pytest.raises(RuntimeError, match="EnvironmentFile path cannot contain whitespace"):
+        launcher._unit_text()
 
 
 def test_no_subcommand_defaults_to_status():
