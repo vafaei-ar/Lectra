@@ -4,12 +4,15 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import soundfile as sf
 
 from .models import PauseSegment, SpeechSegment
 from .tts.base import SynthesisRequest, TTSBackend
+
+ProgressCallback = Callable[[int, int, str], None]
 
 
 class AudioRenderError(RuntimeError):
@@ -57,6 +60,7 @@ def render_segments(
     reference_text: str | None,
     language: str,
     output_path: Path,
+    progress_callback: ProgressCallback | None = None,
 ) -> dict[str, object]:
     """Render parsed narration sequentially without holding the full talk in RAM."""
 
@@ -66,6 +70,9 @@ def render_segments(
     speech_count = sum(isinstance(segment, SpeechSegment) for segment in segments)
     if speech_count == 0:
         raise AudioRenderError("There are no speech segments to render.")
+
+    if progress_callback:
+        progress_callback(0, speech_count, "synthesizing")
 
     with tempfile.TemporaryDirectory(prefix="lectra-") as temp_dir:
         wav_path = (
@@ -111,6 +118,8 @@ def render_segments(
                     writer.write(audio)
                     total_frames += len(audio)
                     rendered_speech += 1
+                    if progress_callback:
+                        progress_callback(rendered_speech, speech_count, "synthesizing")
                 else:
                     if sample_rate is None or writer is None:
                         continue
@@ -125,6 +134,8 @@ def render_segments(
             raise AudioRenderError("Backend did not produce audio.")
 
         if output_path.suffix.lower() == ".mp3":
+            if progress_callback:
+                progress_callback(rendered_speech, speech_count, "encoding")
             _write_mp3_from_wav(wav_path, output_path)
         elif output_path.suffix.lower() != ".wav":
             raise AudioRenderError("Output must end in .wav or .mp3.")
