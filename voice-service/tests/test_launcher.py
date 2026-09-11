@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+import stat
 
 import pytest
 
@@ -17,11 +17,50 @@ def test_local_bind_rejects_remote_autostart():
         launcher._local_bind("https://example.com:8000")
 
 
-def test_start_service_reuses_healthy_existing_service(monkeypatch):
-    monkeypatch.setattr(launcher, "_service_is_healthy", lambda _: True)
+def test_start_service_reuses_compatible_existing_service(monkeypatch):
+    monkeypatch.setattr(
+        launcher,
+        "_health_payload",
+        lambda _: {
+            "service": "lectra-voice",
+            "version": launcher.__version__,
+            "render_job_progress": True,
+        },
+    )
+    monkeypatch.setattr(launcher, "_service_is_compatible", lambda _: True)
     managed = launcher._start_service("http://127.0.0.1:8000")
     assert managed.process is None
     assert managed.reused_existing is True
+
+
+def test_start_service_rejects_incompatible_existing_service(monkeypatch):
+    monkeypatch.setattr(
+        launcher,
+        "_health_payload",
+        lambda _: {
+            "service": "lectra-voice",
+            "version": "0.2.0",
+            "render_job_progress": False,
+        },
+    )
+    monkeypatch.setattr(launcher, "_service_is_compatible", lambda _: False)
+    with pytest.raises(RuntimeError, match="incompatible Lectra voice service"):
+        launcher._start_service("http://127.0.0.1:8000")
+
+
+def test_managed_start_refuses_to_reuse_manual_service(monkeypatch):
+    monkeypatch.setattr(
+        launcher,
+        "_health_payload",
+        lambda _: {
+            "service": "lectra-voice",
+            "version": launcher.__version__,
+            "render_job_progress": True,
+        },
+    )
+    monkeypatch.setattr(launcher, "_service_is_compatible", lambda _: True)
+    with pytest.raises(RuntimeError, match="outside the managed service"):
+        launcher._start_service("http://127.0.0.1:8000", reuse_existing=False)
 
 
 def test_stop_service_terminates_managed_process():
@@ -46,3 +85,33 @@ def test_stop_service_terminates_managed_process():
     launcher._stop_service(launcher.ManagedService(process=process, reused_existing=False))
     assert process.terminated is True
     assert process.killed is False
+
+
+def test_configuration_file_is_private(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    path = launcher._save_configuration(token="123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")
+
+    assert path == tmp_path / "lectra" / "lectra.env"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    values = launcher._read_env_file(path)
+    assert values["TELEGRAM_BOT_TOKEN"] == "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi"
+    assert values["LECTRA_DEVICE"] == "cuda"
+    assert values["LECTRA_VOICE_SERVICE_URL"] == "http://127.0.0.1:8000"
+
+
+def test_systemd_unit_runs_foreground_worker_without_embedding_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    text = launcher._unit_text()
+
+    assert "lectra_voice.launcher foreground" in text
+    assert "Restart=on-failure" in text
+    assert "KillMode=control-group" in text
+    assert "LECTRA_SYSTEMD_MANAGED=1" in text
+    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in text
+    assert str(tmp_path / "lectra" / "lectra.env") in text
+
+
+def test_no_subcommand_defaults_to_status():
+    args = launcher._parse_args([])
+    assert args.command is None
