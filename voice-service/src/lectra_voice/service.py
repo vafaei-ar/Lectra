@@ -17,6 +17,7 @@ from .jobs import (
 )
 from .models import ParseRequest, ParsedNarration
 from .parser import NarrationParseError, parse_narration
+from .plain_text import MAX_TELEGRAM_TEXT_CHARS, PlainTextError
 from .profiles import VoiceProfileError, VoiceStore
 from .rendering import RenderingCoordinator
 from .tts import DEFAULT_BACKEND, backend_availability
@@ -31,6 +32,15 @@ class RenderRequest(BaseModel):
     output_format: Literal["mp3", "wav"] = "mp3"
 
 
+class TextRenderRequest(BaseModel):
+    telegram_user_id: int = Field(gt=0)
+    text: str = Field(min_length=1, max_length=MAX_TELEGRAM_TEXT_CHARS)
+    voice_id: str | None = None
+    backend: Literal["chatterbox", "qwen3"] = DEFAULT_BACKEND
+    device: str = "auto"
+    output_format: Literal["mp3", "wav"] = "mp3"
+
+
 _store = VoiceStore()
 _renderer = RenderingCoordinator(_store)
 _jobs = RenderJobManager(_renderer)
@@ -38,7 +48,7 @@ _jobs = RenderJobManager(_renderer)
 app = FastAPI(
     title="Lectra Voice Service",
     version=__version__,
-    description="Local parsing and voice-rendering service for Lectra presentations.",
+    description="Local parsing and voice-rendering service for Lectra presentations and plain text.",
 )
 
 
@@ -55,6 +65,7 @@ def health() -> dict[str, object]:
         # progress capability while the API contract settles.
         "render_job_progress": True,
         "progress_reporting": True,
+        "plain_text_tts": True,
     }
 
 
@@ -124,6 +135,25 @@ def create_render_job(request: RenderRequest) -> dict[str, object]:
             output_format=request.output_format,
         )
     except NarrationParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except VoiceProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/v1/text/jobs", status_code=202)
+def create_text_render_job(request: TextRenderRequest) -> dict[str, object]:
+    try:
+        return _jobs.submit_text(
+            user_id=request.telegram_user_id,
+            text=request.text,
+            voice_id=request.voice_id,
+            backend_name=request.backend,
+            device=request.device,
+            output_format=request.output_format,
+        )
+    except PlainTextError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except VoiceProfileError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
