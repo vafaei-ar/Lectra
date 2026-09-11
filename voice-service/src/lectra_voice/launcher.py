@@ -255,7 +255,9 @@ def _systemd_quote(value: str) -> str:
 
 def _unit_text() -> str:
     env_path = _env_file()
-    python = Path(sys.executable).resolve()
+    # Preserve the venv interpreter path. Resolving this symlink can jump to the
+    # base Python interpreter and lose the venv site-packages under systemd.
+    python = Path(os.path.abspath(sys.executable))
     return f"""[Unit]
 Description=Lectra local presentation voice service and Telegram bot
 After=network-online.target
