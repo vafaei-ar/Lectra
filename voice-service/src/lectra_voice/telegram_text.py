@@ -107,6 +107,13 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if message is None or message.text is None:
         return
 
+    if context.user_data.get("awaiting_voice_sample"):
+        await message.reply_text(
+            "Voice setup is waiting for a recording. Please send the requested voice/audio sample, "
+            "or start over with /setupvoice later."
+        )
+        return
+
     text = message.text.strip()
     if not text:
         return
