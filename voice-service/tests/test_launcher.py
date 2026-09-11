@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 
 import pytest
@@ -110,6 +111,16 @@ def test_systemd_unit_runs_foreground_worker_without_embedding_token(tmp_path, m
     assert "LECTRA_SYSTEMD_MANAGED=1" in text
     assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in text
     assert str(tmp_path / "lectra" / "lectra.env") in text
+
+
+def test_systemd_unit_preserves_venv_python_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    fake_venv_python = "/tmp/lectra-test/.venv-chatterbox/bin/python"
+    monkeypatch.setattr(launcher.sys, "executable", fake_venv_python)
+
+    text = launcher._unit_text()
+
+    assert f'ExecStart="{os.path.abspath(fake_venv_python)}" -m lectra_voice.launcher foreground' in text
 
 
 def test_no_subcommand_defaults_to_status():
