@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("telegram")
+
 from lectra_voice.telegram_bot import _progress_text, _redact_secrets
 
 
