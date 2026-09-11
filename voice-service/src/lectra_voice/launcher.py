@@ -254,7 +254,12 @@ def _systemd_quote(value: str) -> str:
 
 
 def _unit_text() -> str:
-    env_path = _env_file()
+    env_path = Path(os.path.abspath(_env_file()))
+    if any(char.isspace() for char in str(env_path)):
+        raise RuntimeError(
+            "Lectra's systemd EnvironmentFile path cannot contain whitespace. "
+            "Use the default XDG config location or an XDG_CONFIG_HOME without spaces."
+        )
     # Preserve the venv interpreter path. Resolving this symlink can jump to the
     # base Python interpreter and lose the venv site-packages under systemd.
     python = Path(os.path.abspath(sys.executable))
@@ -265,7 +270,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile={_systemd_quote(str(env_path))}
+EnvironmentFile={env_path}
 Environment=PYTHONUNBUFFERED=1
 Environment=LECTRA_SYSTEMD_MANAGED=1
 ExecStart={_systemd_quote(str(python))} -m lectra_voice.launcher foreground
