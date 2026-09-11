@@ -40,16 +40,30 @@ python -m pip install -e '.[chatterbox,telegram,dev]'
 
 FFmpeg must be available on PATH.
 
-## Configure
+## Simplest run
+
+Configure the bot token, then start everything with one command in one terminal:
 
 ```bash
 export TELEGRAM_BOT_TOKEN='your-bot-token'
-export LECTRA_DATA_DIR="$HOME/.local/share/lectra"
-export LECTRA_DEVICE='cuda'
-export LECTRA_VOICE_SERVICE_URL='http://127.0.0.1:8000'
+lectra
 ```
 
-## Run
+`lectra`:
+
+1. starts the local FastAPI voice service automatically when needed;
+2. waits until the service is healthy;
+3. starts the Telegram bot;
+4. keeps both attached to the same terminal;
+5. stops the service it started when the user presses `Ctrl+C`.
+
+If a healthy local Lectra service is already running, the launcher reuses it rather than starting another copy.
+
+Defaults are `~/.local/share/lectra`, `cuda`, and `http://127.0.0.1:8000`. Advanced users can override them with `LECTRA_DATA_DIR`, `LECTRA_DEVICE`, `LECTRA_VOICE_SERVICE_URL`, or `lectra --help`.
+
+## Manual debugging mode
+
+Starting the service and bot separately remains available for debugging only.
 
 Terminal 1:
 
