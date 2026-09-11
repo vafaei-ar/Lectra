@@ -9,6 +9,12 @@ from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .jobs import (
+    RenderJobError,
+    RenderJobManager,
+    RenderJobNotFoundError,
+    RenderJobNotReadyError,
+)
 from .models import ParseRequest, ParsedNarration
 from .parser import NarrationParseError, parse_narration
 from .profiles import VoiceProfileError, VoiceStore
@@ -27,6 +33,7 @@ class RenderRequest(BaseModel):
 
 _store = VoiceStore()
 _renderer = RenderingCoordinator(_store)
+_jobs = RenderJobManager(_renderer)
 
 app = FastAPI(
     title="Lectra Voice Service",
@@ -44,6 +51,7 @@ def health() -> dict[str, object]:
         "supported_narration_schemas": ["1.0"],
         "default_tts_backend": DEFAULT_BACKEND,
         "tts_backends": backend_availability(),
+        "render_job_progress": True,
     }
 
 
@@ -58,6 +66,19 @@ def parse(request: ParseRequest) -> ParsedNarration:
 def _safe_filename(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
     return cleaned[:80] or "presentation"
+
+
+def _audio_response(payload: bytes, summary: dict[str, object], output_format: str) -> Response:
+    suffix = ".mp3" if output_format == "mp3" else ".wav"
+    title = _safe_filename(str(summary.get("title", "presentation")))
+    media_type = "audio/mpeg" if suffix == ".mp3" else "audio/wav"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{title}{suffix}"',
+        "X-Lectra-Backend": str(summary.get("backend", DEFAULT_BACKEND)),
+        "X-Lectra-Voice": str(summary.get("voice_id", "default")),
+        "X-Lectra-Duration": str(summary.get("duration_seconds", "")),
+    }
+    return Response(content=payload, media_type=media_type, headers=headers)
 
 
 @app.post("/v1/render")
@@ -82,12 +103,44 @@ def render(request: RenderRequest) -> Response:
     except (OSError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    title = _safe_filename(str(summary.get("title", "presentation")))
-    media_type = "audio/mpeg" if suffix == ".mp3" else "audio/wav"
-    headers = {
-        "Content-Disposition": f'attachment; filename="{title}{suffix}"',
-        "X-Lectra-Backend": str(summary.get("backend", request.backend)),
-        "X-Lectra-Voice": str(summary.get("voice_id", request.voice_id or "default")),
-        "X-Lectra-Duration": str(summary.get("duration_seconds", "")),
-    }
-    return Response(content=payload, media_type=media_type, headers=headers)
+    return _audio_response(payload, summary, request.output_format)
+
+
+@app.post("/v1/render/jobs", status_code=202)
+def create_render_job(request: RenderRequest) -> dict[str, object]:
+    try:
+        return _jobs.submit(
+            user_id=request.telegram_user_id,
+            markdown=request.markdown,
+            voice_id=request.voice_id,
+            backend_name=request.backend,
+            device=request.device,
+            output_format=request.output_format,
+        )
+    except NarrationParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except VoiceProfileError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/v1/render/jobs/{job_id}")
+def render_job_status(job_id: str) -> dict[str, object]:
+    try:
+        return _jobs.snapshot(job_id)
+    except RenderJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/render/jobs/{job_id}/audio")
+def render_job_audio(job_id: str) -> Response:
+    try:
+        payload, summary, output_format = _jobs.audio(job_id)
+    except RenderJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RenderJobNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RenderJobError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return _audio_response(payload, summary, output_format)
