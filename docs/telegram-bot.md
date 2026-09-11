@@ -1,6 +1,6 @@
 # Telegram bot MVP
 
-Lectra's Telegram bot is a thin local client for the Lectra Voice Service. It uses long polling, so the local machine does not need a public URL or webhook.
+Lectra's Telegram bot is the user-facing client for the local Lectra Voice Service. It uses Telegram long polling, so the Lectra machine does not need a public URL or webhook.
 
 ## Privacy boundary
 
@@ -10,10 +10,10 @@ Telegram transports the enrollment recording, narration file, and returned MP3. 
 - Users are isolated by immutable numeric Telegram user ID.
 - The bot requires explicit ownership/permission confirmation before saving a voice profile.
 - `/deletevoice` removes Lectra's local voice-profile copy. It does not delete the original Telegram message containing the recording.
-- Bot tokens are read only from `TELEGRAM_BOT_TOKEN`; never commit tokens or voice recordings.
+- Bot tokens are stored only in Lectra's private local configuration and are never committed to the repository.
 - Routine `httpx` and `httpcore` INFO transport logs are suppressed because Telegram Bot API URLs contain the bot token.
-- If a bot token appears in a terminal log, chat, screenshot, issue, or other shared material, revoke it with BotFather and replace `TELEGRAM_BOT_TOKEN` before continuing.
-- Run the FastAPI service on `127.0.0.1` unless you intentionally add authentication and network controls.
+- If a bot token appears in a terminal log, chat, screenshot, issue, or other shared material, revoke it with BotFather and reconfigure Lectra before continuing.
+- The FastAPI service binds to `127.0.0.1` by default.
 
 Default data location:
 
@@ -40,41 +40,54 @@ python -m pip install -e '.[chatterbox,telegram,dev]'
 
 FFmpeg must be available on PATH.
 
-## Simplest run
-
-Configure the bot token, then start everything with one command in one terminal:
+## Configure once
 
 ```bash
-export TELEGRAM_BOT_TOKEN='your-bot-token'
-lectra
+lectra configure
 ```
 
-`lectra`:
+Paste the Telegram bot token into the hidden prompt. Lectra stores it in its local configuration with restrictive permissions.
 
-1. starts the local FastAPI voice service automatically when needed;
-2. waits until the service is healthy;
-3. starts the Telegram bot;
-4. keeps both attached to the same terminal;
-5. stops the service it started when the user presses `Ctrl+C`.
-
-If a healthy local Lectra service is already running, the launcher reuses it rather than starting another copy.
-
-Defaults are `~/.local/share/lectra`, `cuda`, and `http://127.0.0.1:8000`. Advanced users can override them with `LECTRA_DATA_DIR`, `LECTRA_DEVICE`, `LECTRA_VOICE_SERVICE_URL`, or `lectra --help`.
-
-## Manual debugging mode
-
-Starting the service and bot separately remains available for debugging only.
-
-Terminal 1:
+Optional environment overrides can be set before configuration/startup:
 
 ```bash
-python -m uvicorn lectra_voice.service:app --host 127.0.0.1 --port 8000
+export LECTRA_DATA_DIR="$HOME/.local/share/lectra"
+export LECTRA_DEVICE='cuda'
+export LECTRA_VOICE_SERVICE_URL='http://127.0.0.1:8000'
 ```
 
-Terminal 2:
+## Run as a background service
+
+Normal operation uses a user-level systemd service. No sudo and no open terminal are required.
 
 ```bash
-lectra-bot
+lectra start
+lectra status
+lectra restart
+lectra stop
+lectra logs
+```
+
+After `lectra start` reports success, the terminal may be closed. Lectra continues running.
+
+Use:
+
+```bash
+lectra logs --follow
+```
+
+to watch live logs. `Ctrl+C` exits only the log viewer; it does not stop Lectra.
+
+Optional autostart at user login:
+
+```bash
+lectra enable
+```
+
+Disable autostart without stopping an already-running service:
+
+```bash
+lectra disable
 ```
 
 ## User flow
@@ -98,15 +111,17 @@ Useful commands:
 - `/settings`
 - `/health`
 
-`/setupvoice <name>` can be used to create more than one local voice profile.
+`/setupvoice <name>` can create more than one local voice profile.
+
+## API compatibility
+
+The canonical progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. The service advertises progress capability through `/health`, and the managed launcher checks service version/capability before use. This prevents a stale manually started service from being silently reused by a newer bot.
 
 ## Error handling
 
 The bot registers a global error handler so unexpected Telegram-handler errors are reported to the user instead of only appearing in the terminal. Known generation errors are reported directly in the generation status message.
 
-Error text is sanitized before it is sent to Telegram. Strings matching Telegram bot-token syntax are replaced with `<redacted-bot-token>`.
-
-The `/health` command reports whether the local service supports render-job progress reporting.
+Error text sent to Telegram is sanitized for bot-token-shaped secrets. Routine HTTP transport request logs are disabled at INFO level.
 
 ## Telegram limits used by the MVP
 
