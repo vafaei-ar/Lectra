@@ -4,7 +4,7 @@ Lectra's Telegram bot is the user-facing client for the local Lectra Voice Servi
 
 ## Privacy boundary
 
-Telegram transports the enrollment recording, narration file, and returned MP3. Lectra does not send the voice sample or narration to a separate cloud TTS/LLM service.
+Telegram transports enrollment recordings, text messages, narration files, and returned MP3s. Lectra does not send the voice sample, text, or narration to a separate cloud TTS/LLM service.
 
 - Lectra's persistent voice-profile copy is stored under `LECTRA_DATA_DIR` on the local Lectra machine.
 - Users are isolated by immutable numeric Telegram user ID.
@@ -90,7 +90,17 @@ Disable autostart without stopping an already-running service:
 lectra disable
 ```
 
-## User flow
+## Plain-text read-aloud
+
+After a voice profile is configured, send any ordinary non-command Telegram text message to the bot. Lectra immediately reads it with the user's default local voice profile and returns an MP3. There is no extra confirmation button for plain text.
+
+The bot shows the same live stages used for presentation narration: queued, waiting for GPU, loading Chatterbox, reading text chunk by chunk, encoding MP3, and upload. Errors are shown in the Telegram status message.
+
+Telegram text messages are limited to 4,096 characters. Lectra further divides the message into sentence-aware TTS chunks of roughly 420 characters so Chatterbox does not receive one unstable long request. Whitespace is normalized for speech, while wording and punctuation are retained.
+
+Bot commands such as `/health` are excluded from read-aloud. While `/setupvoice` is waiting for a recording, typed text is not synthesized; the bot asks for the voice/audio sample instead.
+
+## Presentation narration flow
 
 1. `/setupvoice`
 2. Confirm voice ownership/permission.
@@ -115,16 +125,16 @@ Useful commands:
 
 ## API compatibility
 
-The canonical progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. The service advertises progress capability through `/health`, and the managed launcher checks service version/capability before use. This prevents a stale manually started service from being silently reused by a newer bot.
+The canonical presentation progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. Plain-text jobs use `/v1/text/jobs`, then share the same job status/audio retrieval endpoints. The service advertises both progress and plain-text TTS capability through `/health`.
 
 ## Error handling
 
 The bot registers a global error handler so unexpected Telegram-handler errors are reported to the user instead of only appearing in the terminal. Known generation errors are reported directly in the generation status message.
 
-Error text sent to Telegram is sanitized for bot-token-shaped secrets. Routine HTTP transport request logs are disabled at INFO level.
+Transient Telegram `NetworkError` failures are logged as concise warnings because the polling library retries them automatically. Error text sent to Telegram is sanitized for bot-token-shaped secrets. Routine HTTP transport request logs are disabled at INFO level.
 
 ## Telegram limits used by the MVP
 
-The Bot API currently allows bot downloads up to 20 MB and audio uploads up to 50 MB. Lectra additionally limits narration Markdown to 2 MB because normal narration files should be far smaller.
+The Bot API currently allows bot downloads up to 20 MB and audio uploads up to 50 MB. Telegram text messages are limited to 4,096 characters. Lectra additionally limits narration Markdown to 2 MB because normal narration files should be far smaller.
 
 Lectra encodes final speech MP3s as 96 kbps mono. At that bitrate a 45-minute presentation is roughly 32 MB, leaving useful headroom under Telegram's 50 MB bot upload limit.
