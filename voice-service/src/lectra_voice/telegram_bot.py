@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
+from telegram.error import NetworkError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -69,6 +70,11 @@ def _generation_keyboard() -> InlineKeyboardMarkup:
 def _redact_secrets(value: object, limit: int = 900) -> str:
     text = TOKEN_RE.sub("<redacted-bot-token>", str(value))
     return text[:limit]
+
+
+def _is_transient_telegram_error(error: object) -> bool:
+    """Return True for Telegram transport failures PTB can retry automatically."""
+    return isinstance(error, NetworkError)
 
 
 def _response_error(response: httpx.Response) -> str:
@@ -476,14 +482,22 @@ async def service_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def telegram_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    LOGGER.error("Unhandled Telegram update error", exc_info=context.error)
+    error = context.error
+    if _is_transient_telegram_error(error):
+        LOGGER.warning(
+            "Temporary Telegram network error: %s. Polling will retry automatically.",
+            _redact_secrets(error or "unknown network error"),
+        )
+        return
+
+    LOGGER.error("Unhandled Telegram update error", exc_info=error)
     message = getattr(update, "effective_message", None)
     if message is None:
         return
     try:
         await message.reply_text(
             "Lectra encountered an unexpected bot error:\n"
-            f"{_redact_secrets(context.error or 'unknown error')}"
+            f"{_redact_secrets(error or 'unknown error')}"
         )
     except Exception:
         LOGGER.exception("Could not send Telegram error message")
