@@ -93,7 +93,8 @@ Minimum narration fallback contract:
 lectra_schema: "1.0"
 title: Presentation title
 language: en-US
-style: academic-presentation
+style: story-driven-academic-presentation
+target_duration_minutes: 20
 default_pace: normal
 default_tone: explanatory
 ---
@@ -102,6 +103,8 @@ default_tone: explanatory
 
 Natural spoken prose.
 ```
+
+When the user supplies a different duration or presentation style, use that instead of the fallback values.
 
 Allowed v1 directives are `slide`, `pause` (`short|medium|long`), `pace` (`slow|normal|fast`), and `tone` (`explanatory|serious|enthusiastic|reflective`). Only ordinary prose is spoken. YAML front matter, comments/directives, headings, lists, tables, code blocks, URLs, and presenter-only metadata must not become speech. Slide directives must be positive and strictly increasing; gaps are allowed.
 
