@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import re
@@ -26,6 +25,13 @@ from .models import SpeechSegment
 from .parser import NarrationParseError, parse_narration
 from .profiles import VoiceProfileError, VoiceStore
 from .telegram_text import receive_text
+from .telegram_upload import (
+    TELEGRAM_UPLOAD_WRITE_TIMEOUT,
+    clear_pending_upload,
+    remember_pending_upload,
+    send_audio_with_retry,
+    upload_retry_keyboard,
+)
 from .tts import DEFAULT_BACKEND
 
 
@@ -34,9 +40,6 @@ MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024
 MAX_NARRATION_BYTES = 2 * 1024 * 1024
 MAX_TELEGRAM_AUDIO_BYTES = 50 * 1024 * 1024
 PROGRESS_POLL_SECONDS = 2.0
-# Match Telegram bot-token-shaped secrets even when embedded directly after the
-# literal "bot" path component in Telegram API URLs. A leading \b does not work
-# there because both the preceding "t" and the first token digit are word chars.
 TOKEN_RE = re.compile(r"(?<!\d)\d{6,}:[A-Za-z0-9_-]{20,}")
 
 STORE = VoiceStore()
@@ -439,29 +442,102 @@ async def narration_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
+    remember_pending_upload(
+        context,
+        job_id=job_id,
+        title=title,
+        filename="presentation.mp3",
+        caption=f"Generated locally with {DEFAULT_BACKEND}.",
+        done_text=f"Done: {title}",
+    )
     await query.edit_message_text(f"Generating: {title}\nUploading MP3 to Telegram")
-    audio = io.BytesIO(audio_response.content)
-    audio.name = "presentation.mp3"
     try:
         if query.message is not None:
-            await query.message.reply_audio(
-                audio=audio,
+            await send_audio_with_retry(
+                message=query.message,
+                audio_bytes=audio_response.content,
+                filename="presentation.mp3",
                 title=title,
-                performer="Lectra",
                 caption=f"Generated locally with {DEFAULT_BACKEND}.",
+                status_message=query.message,
+                status_prefix=f"Generating: {title}\nUploading MP3 to Telegram",
             )
-    except Exception as exc:  # Telegram transport errors are reported to the user below.
+    except Exception as exc:
         LOGGER.exception("Telegram audio upload failed")
         await query.edit_message_text(
-            f"Audio generation succeeded, but Telegram upload failed:\n{_redact_secrets(exc)}",
-            reply_markup=_generation_keyboard(),
+            f"Audio generation succeeded, but Telegram upload failed:\n{_redact_secrets(exc)}\n\n"
+            "The generated audio is still available locally. Retry the upload without regenerating it.",
+            reply_markup=upload_retry_keyboard(),
         )
         return
 
+    clear_pending_upload(context)
     await query.edit_message_text(f"Done: {title}")
     context.user_data.pop("pending_narration", None)
     context.user_data.pop("pending_title", None)
     context.user_data.pop("pending_minutes", None)
+
+
+async def upload_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    action = (query.data or "").split(":", 1)[-1]
+    if action == "dismiss":
+        clear_pending_upload(context)
+        await query.edit_message_text("Upload retry dismissed.")
+        return
+
+    pending = context.user_data.get("pending_upload")
+    if not isinstance(pending, dict):
+        await query.edit_message_text(
+            "No completed audio is available to retry. Send the narration or text again."
+        )
+        return
+
+    job_id = str(pending.get("job_id") or "")
+    title = str(pending.get("title") or "Audio")
+    filename = str(pending.get("filename") or "presentation.mp3")
+    caption = str(pending.get("caption") or f"Generated locally with {DEFAULT_BACKEND}.")
+    done_text = str(pending.get("done_text") or "Done.")
+    if not job_id:
+        clear_pending_upload(context)
+        await query.edit_message_text("The cached upload reference is invalid. Generate the audio again.")
+        return
+
+    await query.edit_message_text("Retrying Telegram upload. The audio will not be regenerated.")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            response = await client.get(f"{SERVICE_URL}/v1/jobs/{job_id}/audio")
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"cached audio returned HTTP {response.status_code}: {_response_error(response)}"
+            )
+        if len(response.content) > MAX_TELEGRAM_AUDIO_BYTES:
+            raise RuntimeError("generated MP3 exceeds Telegram's 50 MB bot upload limit")
+        if query.message is None:
+            raise RuntimeError("Telegram retry message is unavailable")
+        await send_audio_with_retry(
+            message=query.message,
+            audio_bytes=response.content,
+            filename=filename,
+            title=title,
+            caption=caption,
+            status_message=query.message,
+            status_prefix="Retrying Telegram upload",
+        )
+    except Exception as exc:
+        LOGGER.exception("Telegram audio re-upload failed")
+        await query.edit_message_text(
+            "The audio is still generated locally, but Telegram upload failed again:\n"
+            f"{_redact_secrets(exc)}",
+            reply_markup=upload_retry_keyboard(),
+        )
+        return
+
+    clear_pending_upload(context)
+    await query.edit_message_text(done_text)
 
 
 async def service_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -518,7 +594,13 @@ async def post_init(application: Application) -> None:
 
 
 def build_application(token: str) -> Application:
-    application = Application.builder().token(token).post_init(post_init).build()
+    application = (
+        Application.builder()
+        .token(token)
+        .media_write_timeout(TELEGRAM_UPLOAD_WRITE_TIMEOUT)
+        .post_init(post_init)
+        .build()
+    )
     application.add_error_handler(telegram_error_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("setupvoice", setup_voice))
@@ -529,6 +611,7 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("health", service_health))
     application.add_handler(CallbackQueryHandler(voice_consent, pattern=r"^voice-consent:"))
     application.add_handler(CallbackQueryHandler(narration_action, pattern=r"^narration:"))
+    application.add_handler(CallbackQueryHandler(upload_action, pattern=r"^upload:"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
     application.add_handler(
         MessageHandler(filters.VOICE | filters.AUDIO | filters.Document.AUDIO, receive_voice_sample)
@@ -542,8 +625,6 @@ def main() -> None:
         level=os.getenv("LECTRA_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    # httpx/httpcore log request URLs. Telegram Bot API URLs include the bot token,
-    # so do not emit those transport logs at ordinary INFO verbosity.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
