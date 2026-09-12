@@ -10,6 +10,18 @@ Confirm that quantitative values, study populations, methods, and conclusions ma
 
 Confirm that the presentation has a clear purpose and progression. Remove slides that merely repeat source sections without advancing the presentation.
 
+When the user has not specified a different style, confirm the talk follows Lectra's default story-driven academic mode:
+
+- the opening creates curiosity through a real question, tension, observation, consequence, or surprising evidence;
+- the audience understands why the topic matters before receiving too much detail;
+- evidence is revealed in an order that builds understanding;
+- transitions explain why the next slide follows from the previous one;
+- callbacks reconnect later findings to earlier questions;
+- the ending resolves the opening question or tension and leaves a clear take-home message;
+- no fictional anecdotes, quotations, patient stories, or unsupported dramatic details were invented for engagement.
+
+For the default mixed audience of colleagues and students, confirm that students can follow the conceptual logic and terminology while colleagues still receive appropriate methodological detail, numbers, caveats, and limitations.
+
 ## Visual/script separation
 
 Confirm that slides summarize and visualize while the script explains. Avoid using the same full sentences in both surfaces without a reason.
@@ -34,6 +46,8 @@ When the host exposes bundled Skill files, run `scripts/validate_narration.py` w
 ## Timing
 
 Estimate spoken duration from word count and presentation context. Do not pad content solely to hit a target duration. Prefer approximately 120-150 spoken words per minute for ordinary English academic presentation planning unless user-specific pacing is known. When `target_duration_minutes` is provided, confirm it is a positive number and compare it with the estimated duration and planned pauses.
+
+When no duration is supplied, use the Lectra default of a **20-minute talk slot**. Plan roughly **18-19 minutes of spoken content plus natural pauses/transitions**, rather than filling every second of the slot. If the user explicitly asks for 20 full minutes of narration, follow that instead.
 
 ## Final artifact check
 
