@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import re
@@ -12,6 +11,12 @@ from telegram.ext import ContextTypes
 
 from .plain_text import MAX_TELEGRAM_TEXT_CHARS
 from .profiles import VoiceProfileError, VoiceStore
+from .telegram_upload import (
+    clear_pending_upload,
+    remember_pending_upload,
+    send_audio_with_retry,
+    upload_retry_keyboard,
+)
 from .tts import DEFAULT_BACKEND
 
 LOGGER = logging.getLogger(__name__)
@@ -163,22 +168,34 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
+    remember_pending_upload(
+        context,
+        job_id=job_id,
+        title="Text message",
+        filename="text-message.mp3",
+        caption=f"Read locally with {DEFAULT_BACKEND}.",
+        done_text="Done: text read aloud.",
+    )
     await status_message.edit_text("Reading your text\nUploading MP3 to Telegram")
-    audio = io.BytesIO(audio_response.content)
-    audio.name = "text-message.mp3"
     try:
-        await message.reply_audio(
-            audio=audio,
+        await send_audio_with_retry(
+            message=message,
+            audio_bytes=audio_response.content,
+            filename="text-message.mp3",
             title="Text message",
-            performer="Lectra",
             caption=f"Read locally with {DEFAULT_BACKEND}.",
+            status_message=status_message,
+            status_prefix="Reading your text\nUploading MP3 to Telegram",
         )
     except Exception as exc:
         LOGGER.exception("Telegram text-audio upload failed")
         await status_message.edit_text(
             "Audio generation succeeded, but Telegram upload failed:\n"
-            f"{_redact(exc)}"
+            f"{_redact(exc)}\n\n"
+            "The generated audio is still available locally. Retry the upload without regenerating it.",
+            reply_markup=upload_retry_keyboard(),
         )
         return
 
+    clear_pending_upload(context)
     await status_message.edit_text("Done: text read aloud.")
