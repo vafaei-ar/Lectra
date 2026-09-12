@@ -17,6 +17,15 @@ Never invent results, citations, figures, or source claims. Keep scientific and 
 
 Infer constraints already supplied by the user or source context. Ask only questions whose answers could materially change the presentation. Typical high-value constraints are audience, purpose, duration, required format/template, emphasis, and whether backup slides are needed.
 
+When the user does not specify otherwise, use these defaults without asking:
+
+- **Format/context:** a 20-minute academic talk slot.
+- **Audience:** a mixed academic audience of the user's colleagues and students.
+- **Timing target:** aim for about 18-19 minutes of spoken content plus natural pauses/transitions so the 20-minute slot is not overrun.
+- **Narrative style:** strongly story-driven, engaging, and presentation-like while remaining scientifically precise.
+
+User-supplied constraints always override these defaults. If the source context clearly makes a default inappropriate, infer a better choice or ask only the minimum necessary question.
+
 Do not ask the user to repeat information already available. If the user explicitly asks to proceed without discussion, make reasonable assumptions and state them briefly.
 
 ## 3. Plan before rendering
@@ -30,6 +39,10 @@ Before generating files, normally propose a concise presentation plan containing
 - slide-by-slide purpose;
 - planned use of supplied figures/tables/data;
 - major omissions or uncertainties that could affect the talk.
+
+Default to a story-shaped arc rather than a source-summary arc. Open with a concrete hook, question, tension, or surprising observation; establish why it matters; reveal the approach and evidence progressively; interpret what changed in our understanding; and end with a clear resolution or take-home message. Use transitions and callbacks so slides feel connected rather than independent.
+
+Do not invent personal anecdotes, patient stories, quotations, drama, or facts merely to make the talk more entertaining. Engagement must come from structure, pacing, contrast, questions, evidence, and explanation.
 
 Wait for approval or revision unless the user already instructed you to generate immediately.
 
@@ -59,7 +72,9 @@ Read `references/output-contract.md` before producing the final bundle when that
 
 Write speech as someone explaining the presentation to an audience, not as someone reading a slide or audiobook. Use transitions, selective emphasis, references to visible material when useful, and appropriate pacing. Avoid narrating citations, axis labels, table cells, slide numbers, filenames, URLs, presenter notes, or metadata.
 
-Match technical depth to the audience. Preserve exact numbers and scientific meaning.
+Default to an engaging scientific storytelling voice for the mixed colleagues-and-students audience. Keep the language accessible enough that students can follow the logic, but retain enough methodological and quantitative depth to satisfy colleagues. Use questions, contrast, anticipation, callbacks, and concise recaps to maintain attention. Let each section answer a question raised earlier and naturally set up the next one.
+
+Preserve exact numbers, uncertainty, limitations, and scientific meaning. Never simplify in a way that changes the claim.
 
 ## 6. Produce narration schema 1.0
 
@@ -102,7 +117,9 @@ If the script is unavailable, perform the structural checks directly: compare PP
 - no narration remains for removed slides;
 - important numbers agree with the source and slide;
 - the narration fits the requested duration approximately;
+- when defaults apply, the complete talk fits the 20-minute slot without feeling rushed or padded;
 - the narration contains no metadata intended to be spoken accidentally;
+- the talk has a clear hook, progression, transitions, callbacks, and ending rather than reading like a sequence of source sections;
 - scientific claims remain grounded in the supplied material.
 
 Read `references/quality-control.md` for the final checks when that bundled file is available.
