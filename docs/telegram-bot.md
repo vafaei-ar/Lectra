@@ -4,7 +4,7 @@ Lectra's Telegram bot is the user-facing client for the local Lectra Voice Servi
 
 ## Privacy boundary
 
-Telegram transports enrollment recordings, text messages, narration files, and returned MP3s. Lectra does not send the voice sample, text, or narration to a separate cloud TTS/LLM service.
+Telegram transports the enrollment recording, narration file, ordinary text messages, and returned MP3. Lectra does not send the voice sample or narration to a separate cloud TTS/LLM service.
 
 - Lectra's persistent voice-profile copy is stored under `LECTRA_DATA_DIR` on the local Lectra machine.
 - Users are isolated by immutable numeric Telegram user ID.
@@ -90,17 +90,9 @@ Disable autostart without stopping an already-running service:
 lectra disable
 ```
 
-## Plain-text read-aloud
+## User flows
 
-After a voice profile is configured, send any ordinary non-command Telegram text message to the bot. Lectra immediately reads it with the user's default local voice profile and returns an MP3. There is no extra confirmation button for plain text.
-
-The bot shows the same live stages used for presentation narration: queued, waiting for GPU, loading Chatterbox, reading text chunk by chunk, encoding MP3, and upload. Errors are shown in the Telegram status message.
-
-Telegram text messages are limited to 4,096 characters. Lectra further divides the message into sentence-aware TTS chunks of roughly 420 characters so Chatterbox does not receive one unstable long request. Whitespace is normalized for speech, while wording and punctuation are retained.
-
-Bot commands such as `/health` are excluded from read-aloud. While `/setupvoice` is waiting for a recording, typed text is not synthesized; the bot asks for the voice/audio sample instead.
-
-## Presentation narration flow
+### Presentation narration
 
 1. `/setupvoice`
 2. Confirm voice ownership/permission.
@@ -113,6 +105,10 @@ Bot commands such as `/health` are excluded from read-aloud. While `/setupvoice`
 9. If generation fails, the Telegram message shows a sanitized error and restores the **Generate audio** button for retry.
 10. When generation finishes, the bot returns `presentation.mp3` through Telegram's audio player.
 
+### Plain-text read-aloud
+
+Send any ordinary non-command text message. Lectra immediately synthesizes it with the default voice profile, shows chunk-level progress, and returns an MP3. Bot commands such as `/health` are not spoken. If `/setupvoice` is awaiting a recording, typed text is treated as part of setup and does not trigger TTS.
+
 Useful commands:
 
 - `/voices`
@@ -123,18 +119,33 @@ Useful commands:
 
 `/setupvoice <name>` can create more than one local voice profile.
 
+## Reliable Telegram audio delivery
+
+Presentation MP3s can be tens of megabytes, so Lectra does not rely on python-telegram-bot's ordinary media timeout defaults.
+
+- Media uploads use a 600-second write timeout plus explicit read/connect/pool timeouts.
+- A transient Telegram `NetworkError` or timeout triggers one automatic upload retry.
+- The retry creates a fresh in-memory upload stream rather than reusing a partially consumed stream.
+- If both upload attempts fail, Lectra keeps the completed local render job and shows **Retry upload** and **Dismiss** buttons.
+- **Retry upload** fetches the already-generated MP3 from the local render job and retries only the Telegram transfer. Chatterbox is not run again.
+- The cached render job is process-local in the current v0.3 implementation, so an upload-only retry must happen before the Lectra service is restarted. A service restart requires generation again.
+
+This distinction is intentional: a Telegram transfer failure should not be reported as a TTS failure.
+
 ## API compatibility
 
-The canonical presentation progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. Plain-text jobs use `/v1/text/jobs`, then share the same job status/audio retrieval endpoints. The service advertises both progress and plain-text TTS capability through `/health`.
+The canonical progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. Plain-text synthesis uses `/v1/text/jobs`. The service advertises progress and plain-text capabilities through `/health`, and the managed launcher checks service version/capability before use.
 
 ## Error handling
 
 The bot registers a global error handler so unexpected Telegram-handler errors are reported to the user instead of only appearing in the terminal. Known generation errors are reported directly in the generation status message.
 
-Transient Telegram `NetworkError` failures are logged as concise warnings because the polling library retries them automatically. Error text sent to Telegram is sanitized for bot-token-shaped secrets. Routine HTTP transport request logs are disabled at INFO level.
+Transient Telegram polling `NetworkError` failures are logged as concise warnings because python-telegram-bot retries polling automatically. Audio-upload network errors follow the retry path described above.
+
+Error text sent to Telegram is sanitized for bot-token-shaped secrets. Routine HTTP transport request logs are disabled at INFO level.
 
 ## Telegram limits used by the MVP
 
-The Bot API currently allows bot downloads up to 20 MB and audio uploads up to 50 MB. Telegram text messages are limited to 4,096 characters. Lectra additionally limits narration Markdown to 2 MB because normal narration files should be far smaller.
+Lectra caps incoming enrollment audio at 20 MB and outgoing audio at 50 MB. Narration Markdown is limited to 2 MB, and ordinary Telegram text is limited by Telegram's message-size constraint.
 
-Lectra encodes final speech MP3s as 96 kbps mono. At that bitrate a 45-minute presentation is roughly 32 MB, leaving useful headroom under Telegram's 50 MB bot upload limit.
+Lectra encodes final speech MP3s as 96 kbps mono. At that bitrate a 45-minute presentation is roughly 32 MB, leaving useful headroom under the 50 MB output cap.
