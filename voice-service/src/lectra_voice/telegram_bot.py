@@ -488,7 +488,10 @@ async def narration_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_id = _user_id(update)
     voice_id = STORE.default_voice_id(user_id)
     if not voice_id:
-        await query.edit_message_text("No default voice profile. Use /setupvoice first.")
+        await query.edit_message_text(
+            "No voice is selected. Use /voices to choose US Woman or US Man, "
+            "or use /setupvoice if you want your own cloned voice."
+        )
         return
 
     title = str(context.user_data.get("pending_title") or "Presentation")
