@@ -15,6 +15,9 @@ Source project:
 - https://www.festvox.org/cmu_arctic/
 - SLT reference: `cmu_us_slt_arctic/wav/arctic_a0001.wav`
 - BDL reference: `cmu_us_bdl_arctic/wav/arctic_a0001.wav`
+- Lectra first tries the historical Festvox individual-WAV endpoint over HTTP, because that is how CMU ARCTIC has traditionally exposed these files.
+- If the individual WAV is unavailable, Lectra falls back to the official CMU ARCTIC 0.95 release ZIP from Festvox / CMU and extracts only the required reference WAV.
+- HTTPS and HTTP archive variants are both attempted because network environments differ in whether they permit legacy HTTP or support the older hosts' TLS configuration.
 
 ## CMU ARCTIC license
 
