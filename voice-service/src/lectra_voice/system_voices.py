@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
 import urllib.error
 import urllib.request
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from .tts import DEFAULT_BACKEND
 
 
 MAX_PRESET_DOWNLOAD_BYTES = 20 * 1024 * 1024
+MAX_PRESET_ARCHIVE_BYTES = 100 * 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 45.0
 
 
@@ -23,6 +26,8 @@ class SystemVoiceSpec:
     accent: str
     source_speaker: str
     reference_url: str
+    fallback_urls: tuple[str, ...]
+    archive_member: str
     source_homepage: str
     license_name: str = "CMU ARCTIC License"
 
@@ -35,9 +40,18 @@ SYSTEM_VOICES: dict[str, SystemVoiceSpec] = {
         accent="US English",
         source_speaker="CMU ARCTIC SLT",
         reference_url=(
-            "https://festvox.org/cmu_arctic/cmu_arctic/"
+            "http://festvox.org/cmu_arctic/cmu_arctic/"
             "cmu_us_slt_arctic/wav/arctic_a0001.wav"
         ),
+        fallback_urls=(
+            "https://festvox.org/cmu_arctic/cmu_arctic/"
+            "cmu_us_slt_arctic/wav/arctic_a0001.wav",
+            "http://festvox.org/cmu_arctic/cmu_arctic/packed/"
+            "cmu_us_slt_arctic-0.95-release.zip",
+            "http://www.speech.cs.cmu.edu/cmu_arctic/packed/"
+            "cmu_us_slt_arctic-0.95-release.zip",
+        ),
+        archive_member="cmu_us_slt_arctic/wav/arctic_a0001.wav",
         source_homepage="https://www.festvox.org/cmu_arctic/",
     ),
     "us-man": SystemVoiceSpec(
@@ -47,9 +61,18 @@ SYSTEM_VOICES: dict[str, SystemVoiceSpec] = {
         accent="US English",
         source_speaker="CMU ARCTIC BDL",
         reference_url=(
-            "https://festvox.org/cmu_arctic/cmu_arctic/"
+            "http://festvox.org/cmu_arctic/cmu_arctic/"
             "cmu_us_bdl_arctic/wav/arctic_a0001.wav"
         ),
+        fallback_urls=(
+            "https://festvox.org/cmu_arctic/cmu_arctic/"
+            "cmu_us_bdl_arctic/wav/arctic_a0001.wav",
+            "http://festvox.org/cmu_arctic/cmu_arctic/packed/"
+            "cmu_us_bdl_arctic-0.95-release.zip",
+            "http://www.speech.cs.cmu.edu/cmu_arctic/packed/"
+            "cmu_us_bdl_arctic-0.95-release.zip",
+        ),
+        archive_member="cmu_us_bdl_arctic/wav/arctic_a0001.wav",
         source_homepage="https://www.festvox.org/cmu_arctic/",
     ),
 }
@@ -80,25 +103,71 @@ def _looks_like_wav(payload: bytes) -> bool:
     )
 
 
-def _download(reference_url: str) -> bytes:
+def _read_url(url: str, *, max_bytes: int) -> bytes:
     request = urllib.request.Request(
-        reference_url,
-        headers={"User-Agent": "Lectra preset-voice downloader"},
+        url,
+        headers={
+            "User-Agent": "Lectra/0.3 preset-voice downloader",
+            "Accept": "*/*",
+        },
     )
-    try:
-        with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
-            payload = response.read(MAX_PRESET_DOWNLOAD_BYTES + 1)
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise SystemVoiceError(
-            "Could not download the preset voice reference clip. "
-            "Check internet access and try again, or use /setupvoice."
-        ) from exc
-
-    if len(payload) > MAX_PRESET_DOWNLOAD_BYTES:
-        raise SystemVoiceError("Preset voice reference clip exceeded the safety size limit.")
-    if not _looks_like_wav(payload):
-        raise SystemVoiceError("Preset voice download was not a valid WAV file.")
+    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+        payload = response.read(max_bytes + 1)
+    if len(payload) > max_bytes:
+        raise SystemVoiceError("download exceeded the configured safety size limit")
     return payload
+
+
+def _payload_from_candidate(spec: SystemVoiceSpec, url: str) -> bytes:
+    if url.lower().endswith(".zip"):
+        archive = _read_url(url, max_bytes=MAX_PRESET_ARCHIVE_BYTES)
+        try:
+            with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                payload = bundle.read(spec.archive_member)
+        except (zipfile.BadZipFile, KeyError) as exc:
+            raise SystemVoiceError(
+                f"archive did not contain {spec.archive_member}"
+            ) from exc
+        if len(payload) > MAX_PRESET_DOWNLOAD_BYTES:
+            raise SystemVoiceError("reference WAV exceeded the safety size limit")
+        return payload
+
+    return _read_url(url, max_bytes=MAX_PRESET_DOWNLOAD_BYTES)
+
+
+def _error_detail(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code} {exc.reason}"
+    if isinstance(exc, urllib.error.URLError):
+        return str(exc.reason)
+    return str(exc) or type(exc).__name__
+
+
+def _download(spec: SystemVoiceSpec) -> tuple[bytes, str]:
+    failures: list[str] = []
+    candidates = (spec.reference_url, *spec.fallback_urls)
+
+    for url in candidates:
+        try:
+            payload = _payload_from_candidate(spec, url)
+            if not _looks_like_wav(payload):
+                raise SystemVoiceError("response was not a valid WAV file")
+            return payload, url
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            SystemVoiceError,
+            zipfile.BadZipFile,
+        ) as exc:
+            failures.append(f"{url}: {_error_detail(exc)}")
+
+    detail = " | ".join(failures[-3:])
+    raise SystemVoiceError(
+        "Could not download the preset voice reference clip from any CMU ARCTIC source. "
+        f"Last attempts: {detail}. "
+        "The preset was not selected. Try again later or use /setupvoice."
+    )
 
 
 def ensure_system_voice(root: Path, voice_id: str) -> tuple[Path, SystemVoiceSpec]:
@@ -119,7 +188,7 @@ def ensure_system_voice(root: Path, voice_id: str) -> tuple[Path, SystemVoiceSpe
     except OSError:
         pass
 
-    payload = _download(spec.reference_url)
+    payload, resolved_url = _download(spec)
     fd, temp_name = tempfile.mkstemp(prefix="reference-", suffix=".wav", dir=directory)
     temp_path = Path(temp_name)
     try:
@@ -141,6 +210,7 @@ def ensure_system_voice(root: Path, voice_id: str) -> tuple[Path, SystemVoiceSpe
         {
             "backend": DEFAULT_BACKEND,
             "reference_audio": "reference.wav",
+            "resolved_reference_url": resolved_url,
             "source_note": (
                 "CMU ARCTIC BDL and SLT are licensed US English speech recordings. "
                 "Lectra uses this clip only as a local Chatterbox reference prompt."
