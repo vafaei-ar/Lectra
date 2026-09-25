@@ -71,6 +71,31 @@ def _generation_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def _voice_selection_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🇺🇸 US Woman", callback_data="voice-select:us-woman"),
+            InlineKeyboardButton("🇺🇸 US Man", callback_data="voice-select:us-man"),
+        ],
+        [InlineKeyboardButton("🎙 Use my voice", callback_data="voice-select:setup")],
+    ])
+
+
+def _voice_alias(value: str) -> str:
+    normalized = value.strip().lower()
+    aliases = {
+        "female": "us-woman",
+        "woman": "us-woman",
+        "us-female": "us-woman",
+        "us-woman": "us-woman",
+        "male": "us-man",
+        "man": "us-man",
+        "us-male": "us-man",
+        "us-man": "us-man",
+    }
+    return aliases.get(normalized, value.strip())
+
+
 def _redact_secrets(value: object, limit: int = 900) -> str:
     text = TOKEN_RE.sub("<redacted-bot-token>", str(value))
     return text[:limit]
@@ -136,18 +161,25 @@ def _progress_text(title: str, status: dict[str, object]) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     await update.message.reply_text(
-        "Lectra turns text or a presentation narration Markdown file into audio in your local voice profile.\n\n"
-        "1. Run /setupvoice once.\n"
+        "Lectra turns text or a presentation narration Markdown file into audio.\n\n"
+        "1. Choose a voice with /voices: US Woman, US Man, or your own cloned voice.\n"
         "2. Send ordinary text to have Lectra read it immediately, or send presentation-narration.md for a full presentation.\n"
         "3. For narration files, tap Generate audio.\n\n"
-        "Telegram transports your messages and files. Lectra stores the voice profile and runs "
-        "TTS locally; it does not send the voice sample to a separate cloud TTS service."
+        "Using /setupvoice is optional. Telegram transports your messages and files. "
+        "Lectra stores personal voice profiles and runs TTS locally; it does not send "
+        "your voice sample to a separate cloud TTS service."
     )
 
 
 async def setup_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     voice_id = context.args[0] if context.args else "default"
+    if STORE.is_system_voice(voice_id):
+        await update.message.reply_text(
+            f"'{voice_id}' is a built-in Lectra preset. Choose it with /voices, "
+            "or use another name for your personal voice."
+        )
+        return
     try:
         STORE.voice_dir(_user_id(update), voice_id)
     except VoiceProfileError as exc:
@@ -248,28 +280,74 @@ async def list_voices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     assert update.message is not None
     user_id = _user_id(update)
     voices = STORE.list_voices(user_id)
-    if not voices:
-        await update.message.reply_text("No voice profile yet. Use /setupvoice.")
-        return
     default = STORE.default_voice_id(user_id)
-    lines = ["Your Lectra voice profiles:"]
-    for voice in voices:
-        marker = " (default)" if voice.voice_id == default else ""
-        lines.append(f"- {voice.voice_id}{marker}")
-    await update.message.reply_text("\n".join(lines))
+    lines = ["Choose your Lectra voice:", "", "Built-in presets:"]
+    for spec in STORE.system_voices():
+        marker = " (default)" if spec.voice_id == default else ""
+        lines.append(f"- {spec.display_name}{marker}")
+    lines.append("")
+    if voices:
+        lines.append("Your cloned voices:")
+        for voice in voices:
+            marker = " (default)" if voice.voice_id == default else ""
+            lines.append(f"- {voice.voice_id}{marker}")
+        lines.append("Use /defaultvoice <voice-name> to select a cloned voice.")
+    else:
+        lines.append("No personal voice profile yet. /setupvoice is optional.")
+    await update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=_voice_selection_keyboard(),
+    )
 
 
 async def set_default_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     if not context.args:
-        await update.message.reply_text("Usage: /defaultvoice <voice-name>")
+        await update.message.reply_text(
+            "Usage: /defaultvoice <voice-name>\n"
+            "Preset aliases: woman, man, us-woman, us-man"
+        )
         return
+    voice_id = _voice_alias(context.args[0])
     try:
-        STORE.set_default_voice(_user_id(update), context.args[0])
+        await asyncio.to_thread(STORE.set_default_voice, _user_id(update), voice_id)
     except VoiceProfileError as exc:
         await update.message.reply_text(str(exc))
         return
-    await update.message.reply_text(f"Default voice set to '{context.args[0]}'.")
+    await update.message.reply_text(
+        f"Default voice set to {STORE.voice_display_name(voice_id)}."
+    )
+
+
+async def voice_selection_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    voice_id = (query.data or "").split(":", 1)[-1]
+    if voice_id == "setup":
+        await query.edit_message_text(
+            "To use your own cloned voice, run /setupvoice and follow the recording steps. "
+            "You can return to the two built-in presets anytime with /voices."
+        )
+        return
+    if not STORE.is_system_voice(voice_id):
+        await query.edit_message_text("That preset voice is not available.")
+        return
+
+    await query.edit_message_text(
+        f"Preparing {STORE.voice_display_name(voice_id)}. "
+        "The first use may download a small licensed reference clip."
+    )
+    try:
+        await asyncio.to_thread(STORE.set_default_voice, _user_id(update), voice_id)
+    except VoiceProfileError as exc:
+        await query.edit_message_text(f"Could not select preset voice: {_redact_secrets(exc)}")
+        return
+    await query.edit_message_text(
+        f"Default voice set to {STORE.voice_display_name(voice_id)}. "
+        "Send text or a presentation narration file whenever you are ready."
+    )
 
 
 async def delete_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -295,7 +373,8 @@ async def delete_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
-    default_voice = STORE.default_voice_id(_user_id(update)) or "not configured"
+    default_voice_id = STORE.default_voice_id(_user_id(update))
+    default_voice = STORE.voice_display_name(default_voice_id)
     await update.message.reply_text(
         f"Default TTS: {DEFAULT_BACKEND}\n"
         f"Default voice: {default_voice}\n"
@@ -325,7 +404,10 @@ async def receive_narration(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         STORE.get_voice(_user_id(update))
     except VoiceProfileError:
-        await message.reply_text("Set up a voice first with /setupvoice.")
+        await message.reply_text(
+            "Choose a voice first with /voices. You can use US Woman, US Man, "
+            "or set up your own voice with /setupvoice."
+        )
         return
 
     try:
@@ -584,9 +666,9 @@ async def telegram_error_handler(update: object, context: ContextTypes.DEFAULT_T
 async def post_init(application: Application) -> None:
     await application.bot.set_my_commands([
         BotCommand("start", "How to use Lectra"),
-        BotCommand("setupvoice", "Create or replace a voice profile"),
-        BotCommand("voices", "List local voice profiles"),
-        BotCommand("defaultvoice", "Select a default voice profile"),
+        BotCommand("setupvoice", "Create or replace your personal voice"),
+        BotCommand("voices", "Choose US presets or view your voices"),
+        BotCommand("defaultvoice", "Select a default voice"),
         BotCommand("deletevoice", "Delete a local voice profile"),
         BotCommand("settings", "Show Lectra settings"),
         BotCommand("health", "Check the local voice service"),
@@ -610,6 +692,7 @@ def build_application(token: str) -> Application:
     application.add_handler(CommandHandler("settings", settings))
     application.add_handler(CommandHandler("health", service_health))
     application.add_handler(CallbackQueryHandler(voice_consent, pattern=r"^voice-consent:"))
+    application.add_handler(CallbackQueryHandler(voice_selection_action, pattern=r"^voice-select:"))
     application.add_handler(CallbackQueryHandler(narration_action, pattern=r"^narration:"))
     application.add_handler(CallbackQueryHandler(upload_action, pattern=r"^upload:"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text))
