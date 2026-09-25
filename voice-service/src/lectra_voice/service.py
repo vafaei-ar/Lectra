@@ -66,6 +66,15 @@ def health() -> dict[str, object]:
         "render_job_progress": True,
         "progress_reporting": True,
         "plain_text_tts": True,
+        "preset_voices": [
+            {
+                "id": spec.voice_id,
+                "name": spec.display_name,
+                "gender": spec.gender,
+                "accent": spec.accent,
+            }
+            for spec in _store.system_voices()
+        ],
     }
 
 
