@@ -14,7 +14,7 @@ from .tts import DEFAULT_BACKEND
 
 
 MAX_PRESET_DOWNLOAD_BYTES = 20 * 1024 * 1024
-MAX_PRESET_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_PRESET_ARCHIVE_BYTES = 200 * 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 45.0
 
 
@@ -44,6 +44,8 @@ SYSTEM_VOICES: dict[str, SystemVoiceSpec] = {
             "cmu_us_slt_arctic/wav/arctic_a0001.wav"
         ),
         fallback_urls=(
+            "https://raw.githubusercontent.com/Jitendradhiman/"
+            "Jitendradhiman.github.io/master/media/PAP/slt/arctic_a0001original.wav",
             "https://festvox.org/cmu_arctic/cmu_arctic/"
             "cmu_us_slt_arctic/wav/arctic_a0001.wav",
             "http://festvox.org/cmu_arctic/cmu_arctic/packed/"
@@ -67,6 +69,8 @@ SYSTEM_VOICES: dict[str, SystemVoiceSpec] = {
             "cmu_us_bdl_arctic/wav/arctic_a0001.wav"
         ),
         fallback_urls=(
+            "https://raw.githubusercontent.com/Jitendradhiman/"
+            "Jitendradhiman.github.io/master/media/PAP/bdl/arctic_a0001original.wav",
             "https://festvox.org/cmu_arctic/cmu_arctic/"
             "cmu_us_bdl_arctic/wav/arctic_a0001.wav",
             "http://festvox.org/cmu_arctic/cmu_arctic/packed/"
