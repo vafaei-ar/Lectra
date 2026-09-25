@@ -19,14 +19,23 @@ Default data location:
 
 ```text
 ~/.local/share/lectra/
+├── system-voices/
+│   ├── us-woman/
+│   │   ├── metadata.json
+│   │   └── reference.wav
+│   └── us-man/
+│       ├── metadata.json
+│       └── reference.wav
 └── users/
     └── <telegram_user_id>/
         ├── profile.json
         └── voices/
-            └── default/
+            └── <personal_voice_name>/
                 ├── metadata.json
                 └── reference.wav
 ```
+
+The two system preset references are shared by the local Lectra installation. Personal cloned voices remain isolated by Telegram user ID.
 
 ## Install
 
@@ -92,22 +101,32 @@ lectra disable
 
 ## User flows
 
+### Choose a voice
+
+Run `/voices`. Lectra offers:
+
+- **US Woman**: shared preset based on CMU ARCTIC SLT, a US English female speaker.
+- **US Man**: shared preset based on CMU ARCTIC BDL, a US English male speaker.
+- **My voice**: run `/setupvoice` if the user wants a private cloned voice.
+
+The two preset buttons require no enrollment or ownership confirmation. On first selection, Lectra downloads the small licensed reference clip and caches it locally. Later uses reuse the cached reference. Existing users keep their current default until they select another voice.
+
+`/defaultvoice woman`, `/defaultvoice man`, `/defaultvoice us-woman`, and `/defaultvoice us-man` are also supported. Personal cloned voice IDs continue to work with `/defaultvoice <name>`.
+
 ### Presentation narration
 
-1. `/setupvoice`
-2. Confirm voice ownership/permission.
-3. Read the neutral reference script and send the recording as a Telegram voice message or audio file.
-4. Send `presentation-narration.md` as a document.
-5. Review the parsed title, segment count, and estimated duration.
-6. Tap **Generate audio**.
-7. The bot starts a local render job and edits the Telegram status message as the job moves through **waiting for GPU**, **loading model**, **generating speech**, and **encoding MP3**.
-8. During speech synthesis the bot reports completed/total speech segments, percentage, a progress bar, and elapsed time.
-9. If generation fails, the Telegram message shows a sanitized error and restores the **Generate audio** button for retry.
-10. When generation finishes, the bot returns `presentation.mp3` through Telegram's audio player.
+1. Choose a voice with `/voices`, or optionally create a personal voice with `/setupvoice`.
+2. Send `presentation-narration.md` as a document.
+3. Review the parsed title, segment count, and estimated duration.
+4. Tap **Generate audio**.
+5. The bot starts a local render job and edits the Telegram status message as the job moves through **waiting for GPU**, **loading model**, **generating speech**, and **encoding MP3**.
+6. During speech synthesis the bot reports completed/total speech segments, percentage, a progress bar, and elapsed time.
+7. If generation fails, the Telegram message shows a sanitized error and restores the **Generate audio** button for retry.
+8. When generation finishes, the bot returns `presentation.mp3` through Telegram's audio player.
 
 ### Plain-text read-aloud
 
-Send any ordinary non-command text message. Lectra immediately synthesizes it with the default voice profile, shows chunk-level progress, and returns an MP3. Bot commands such as `/health` are not spoken. If `/setupvoice` is awaiting a recording, typed text is treated as part of setup and does not trigger TTS.
+Send any ordinary non-command text message. Lectra immediately synthesizes it with the selected default voice, shows chunk-level progress, and returns an MP3. Bot commands such as `/health` are not spoken. If `/setupvoice` is awaiting a recording, typed text is treated as part of setup and does not trigger TTS.
 
 Useful commands:
 
@@ -117,7 +136,7 @@ Useful commands:
 - `/settings`
 - `/health`
 
-`/setupvoice <name>` can create more than one local voice profile.
+`/setupvoice <name>` can create more than one local voice profile. The preset IDs `us-woman` and `us-man` are reserved and cannot be overwritten or deleted.
 
 ## Reliable Telegram audio delivery
 
@@ -134,7 +153,7 @@ This distinction is intentional: a Telegram transfer failure should not be repor
 
 ## API compatibility
 
-The canonical progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. Plain-text synthesis uses `/v1/text/jobs`. The service advertises progress and plain-text capabilities through `/health`, and the managed launcher checks service version/capability before use.
+The canonical progress API is `/v1/render/jobs`. During the v0.3 transition the service also accepts the earlier `/v1/jobs` paths used by the first Telegram progress build. Plain-text synthesis uses `/v1/text/jobs`. The service advertises progress, plain-text, and the two preset voices through `/health`, and the managed launcher checks service version/capability before use.
 
 ## Error handling
 
@@ -149,3 +168,13 @@ Error text sent to Telegram is sanitized for bot-token-shaped secrets. Routine H
 Lectra caps incoming enrollment audio at 20 MB and outgoing audio at 50 MB. Narration Markdown is limited to 2 MB, and ordinary Telegram text is limited by Telegram's message-size constraint.
 
 Lectra encodes final speech MP3s as 96 kbps mono. At that bitrate a 45-minute presentation is roughly 32 MB, leaving useful headroom under the 50 MB output cap.
+
+
+## Preset voice provenance
+
+The shared presets use licensed CMU ARCTIC reference recordings:
+
+- `us-woman`: SLT, US English female speaker
+- `us-man`: BDL, US English male speaker
+
+See `../voice-service/THIRD_PARTY_VOICES.md` for source URLs and license details. Lectra uses these clips only as local Chatterbox conditioning references; they are not user-cloned voices.
