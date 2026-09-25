@@ -8,6 +8,13 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .system_voices import (
+    SystemVoiceError,
+    ensure_system_voice,
+    is_system_voice_id,
+    system_voice_label,
+    system_voice_specs,
+)
 from .tts import DEFAULT_BACKEND
 
 
@@ -59,6 +66,20 @@ class VoiceStore:
             )
         return voice_id
 
+    @staticmethod
+    def is_system_voice(voice_id: str | None) -> bool:
+        return is_system_voice_id(voice_id)
+
+    @staticmethod
+    def system_voices():
+        return system_voice_specs()
+
+    @staticmethod
+    def voice_display_name(voice_id: str | None) -> str:
+        if not voice_id:
+            return "not configured"
+        return system_voice_label(voice_id) or voice_id
+
     def user_dir(self, user_id: int) -> Path:
         user_id = self._validate_user_id(user_id)
         return self.root / "users" / str(user_id)
@@ -102,6 +123,10 @@ class VoiceStore:
     ) -> VoiceRecord:
         user_id = self._validate_user_id(user_id)
         voice_id = self._validate_voice_id(voice_id)
+        if is_system_voice_id(voice_id):
+            raise VoiceProfileError(
+                f"'{voice_id}' is reserved for a Lectra preset voice. Choose another voice name."
+            )
         if not consent_confirmed:
             raise ConsentRequiredError(
                 "Voice enrollment requires confirmation that the recording is the user's "
@@ -147,13 +172,33 @@ class VoiceStore:
         self._write_json_atomic(self._profile_path(user_id), user_profile)
         return record
 
+    def _system_voice_record(self, user_id: int, voice_id: str) -> VoiceRecord:
+        try:
+            reference_audio, spec = ensure_system_voice(self.root, voice_id)
+        except SystemVoiceError as exc:
+            raise VoiceProfileError(str(exc)) from exc
+        return VoiceRecord(
+            user_id=user_id,
+            voice_id=spec.voice_id,
+            reference_audio=reference_audio,
+            created_at="system",
+            consent_confirmed=True,
+            backend=DEFAULT_BACKEND,
+            reference_text=None,
+        )
+
     def get_voice(self, user_id: int, voice_id: str | None = None) -> VoiceRecord:
         user_id = self._validate_user_id(user_id)
         if voice_id is None:
             voice_id = self.default_voice_id(user_id)
         if not voice_id:
-            raise VoiceProfileError("No voice profile is configured for this user.")
+            raise VoiceProfileError(
+                "No voice is selected. Use /voices to choose a preset or /setupvoice to clone your voice."
+            )
         voice_id = self._validate_voice_id(voice_id)
+
+        if is_system_voice_id(voice_id):
+            return self._system_voice_record(user_id, voice_id)
 
         directory = self.voice_dir(user_id, voice_id)
         metadata_path = directory / "metadata.json"
@@ -200,6 +245,8 @@ class VoiceStore:
         return str(voice_id) if voice_id else None
 
     def set_default_voice(self, user_id: int, voice_id: str) -> None:
+        user_id = self._validate_user_id(user_id)
+        voice_id = self._validate_voice_id(voice_id)
         self.get_voice(user_id, voice_id)
         profile = self._read_user_profile(user_id)
         profile["telegram_user_id"] = user_id
@@ -209,6 +256,8 @@ class VoiceStore:
     def delete_voice(self, user_id: int, voice_id: str) -> bool:
         user_id = self._validate_user_id(user_id)
         voice_id = self._validate_voice_id(voice_id)
+        if is_system_voice_id(voice_id):
+            raise VoiceProfileError("Lectra preset voices are shared system voices and cannot be deleted.")
         directory = self.voice_dir(user_id, voice_id)
         if not directory.exists():
             return False
