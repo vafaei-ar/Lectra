@@ -132,7 +132,10 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         voice = STORE.get_voice(user_id)
     except VoiceProfileError:
-        await message.reply_text("Set up a voice first with /setupvoice.")
+        await message.reply_text(
+            "Choose a voice first with /voices. You can use US Woman, US Man, "
+            "or set up your own voice with /setupvoice."
+        )
         return
 
     status_message = await message.reply_text(
