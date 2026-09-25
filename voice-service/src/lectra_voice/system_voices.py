@@ -48,6 +48,8 @@ SYSTEM_VOICES: dict[str, SystemVoiceSpec] = {
             "cmu_us_slt_arctic/wav/arctic_a0001.wav",
             "http://festvox.org/cmu_arctic/cmu_arctic/packed/"
             "cmu_us_slt_arctic-0.95-release.zip",
+            "https://www.speech.cs.cmu.edu/cmu_arctic/packed/"
+            "cmu_us_slt_arctic-0.95-release.zip",
             "http://www.speech.cs.cmu.edu/cmu_arctic/packed/"
             "cmu_us_slt_arctic-0.95-release.zip",
         ),
@@ -68,6 +70,8 @@ SYSTEM_VOICES: dict[str, SystemVoiceSpec] = {
             "https://festvox.org/cmu_arctic/cmu_arctic/"
             "cmu_us_bdl_arctic/wav/arctic_a0001.wav",
             "http://festvox.org/cmu_arctic/cmu_arctic/packed/"
+            "cmu_us_bdl_arctic-0.95-release.zip",
+            "https://www.speech.cs.cmu.edu/cmu_arctic/packed/"
             "cmu_us_bdl_arctic-0.95-release.zip",
             "http://www.speech.cs.cmu.edu/cmu_arctic/packed/"
             "cmu_us_bdl_arctic-0.95-release.zip",
