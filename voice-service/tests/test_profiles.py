@@ -1,4 +1,7 @@
 from pathlib import Path
+import io
+import urllib.error
+import zipfile
 
 import pytest
 
@@ -121,3 +124,47 @@ def test_system_voice_catalog_has_us_man_and_woman(tmp_path: Path):
     assert specs["us-woman"].accent == "US English"
     assert specs["us-man"].gender == "male"
     assert specs["us-man"].accent == "US English"
+
+
+def test_system_preset_falls_back_after_first_url_failure(tmp_path: Path, monkeypatch):
+    calls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise urllib.error.URLError("TLS handshake failed")
+        return _FakeResponse(_fake_wav_payload())
+
+    monkeypatch.setattr("lectra_voice.system_voices.urllib.request.urlopen", fake_urlopen)
+
+    store = VoiceStore(tmp_path / "data")
+    store.set_default_voice(123, "us-woman")
+
+    assert store.get_voice(123).voice_id == "us-woman"
+    assert len(calls) == 2
+
+
+def test_system_preset_can_extract_reference_from_release_zip(tmp_path: Path, monkeypatch):
+    from lectra_voice.system_voices import SYSTEM_VOICES
+
+    spec = SYSTEM_VOICES["us-woman"]
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(spec.archive_member, _fake_wav_payload())
+
+    calls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if request.full_url.lower().endswith(".zip"):
+            return _FakeResponse(archive.getvalue())
+        raise urllib.error.URLError("direct WAV unavailable")
+
+    monkeypatch.setattr("lectra_voice.system_voices.urllib.request.urlopen", fake_urlopen)
+
+    store = VoiceStore(tmp_path / "data")
+    store.set_default_voice(123, "us-woman")
+
+    record = store.get_voice(123)
+    assert record.reference_audio.read_bytes() == _fake_wav_payload()
+    assert any(url.lower().endswith(".zip") for url in calls)
