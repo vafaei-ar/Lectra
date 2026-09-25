@@ -637,7 +637,16 @@ async def service_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"Version: {payload.get('version', 'unknown')}\n"
         f"Default TTS: {payload.get('default_tts_backend', 'unknown')}\n"
         f"Progress reporting: {'yes' if payload.get('progress_reporting') else 'no'}\n"
-        f"Plain text TTS: {'yes' if payload.get('plain_text_tts') else 'no'}"
+        f"Plain text TTS: {'yes' if payload.get('plain_text_tts') else 'no'}\n"
+        f"Preset voices: "
+        + (
+            ", ".join(
+                str(item.get("name"))
+                for item in payload.get("preset_voices", [])
+                if isinstance(item, dict) and item.get("name")
+            )
+            or "unavailable"
+        )
     )
 
 
