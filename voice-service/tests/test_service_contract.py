@@ -21,3 +21,12 @@ def test_health_advertises_progress_under_both_v03_keys():
 def test_health_advertises_plain_text_tts():
     payload = health()
     assert payload["plain_text_tts"] is True
+
+
+def test_health_advertises_two_us_preset_voices():
+    payload = health()
+    presets = {item["id"]: item for item in payload["preset_voices"]}
+    assert presets["us-woman"]["gender"] == "female"
+    assert presets["us-woman"]["accent"] == "US English"
+    assert presets["us-man"]["gender"] == "male"
+    assert presets["us-man"]["accent"] == "US English"
