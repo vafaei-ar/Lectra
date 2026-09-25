@@ -67,6 +67,26 @@ Defaults:
 - device: `cuda`
 - local service: `http://127.0.0.1:8000`
 
+## Voice choices
+
+Voice cloning is optional. In Telegram, run:
+
+```text
+/voices
+```
+
+Lectra offers two shared built-in US English presets plus any personal cloned voices:
+
+- **US Woman** (`us-woman`): CMU ARCTIC SLT, US English female speaker
+- **US Man** (`us-man`): CMU ARCTIC BDL, US English male speaker
+- **My voice**: use `/setupvoice` to create a private cloned profile
+
+Selecting a preset makes it the user's default for both ordinary text and presentation narration. The preset reference clip is downloaded once on first use, cached under `LECTRA_DATA_DIR/system-voices/`, and shared by users of that local Lectra installation. It is not copied into each user's private voice directory.
+
+Personal voice profiles remain isolated by Telegram user ID. Existing users keep their current default voice unless they choose another one.
+
+See `THIRD_PARTY_VOICES.md` for preset provenance and license details.
+
 `LECTRA_DATA_DIR`, `LECTRA_DEVICE`, and `LECTRA_VOICE_SERVICE_URL` can override those defaults before configuration/startup.
 
 ## Development and tests
